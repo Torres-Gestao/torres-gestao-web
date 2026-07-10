@@ -123,5 +123,11 @@ export interface Database {
         Update: Partial<Pedido>;
       };
     };
+    Functions: {
+      get_pedido: {
+        Args: { p_id: string };
+        Returns: Pedido[];
+      };
+    };
   };
 }
