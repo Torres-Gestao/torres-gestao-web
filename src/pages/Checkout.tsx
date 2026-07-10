@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useOutletContext, useNavigate, Link } from "react-router-dom";
-import type { Cliente, FormaPagamento, Loja, Modalidade, Pedido } from "@/types/db";
+import type { Cliente, FormaPagamento, Loja, Modalidade } from "@/types/db";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import { supabase } from "@/lib/supabase";
 import { brl, formatPhone, onlyDigits } from "@/lib/money";
@@ -115,7 +115,12 @@ export default function Checkout() {
       const telefoneDigits = onlyDigits(telefone);
       const cliente = await upsertCliente(telefoneDigits);
 
+      // id gerado no cliente: assim não dependemos de RETURNING (SELECT em
+      // pedidos foi revogado para o anônimo por privacidade).
+      const novoPedidoId = crypto.randomUUID();
+
       const payload = {
+        id: novoPedidoId,
         loja_id: loja.id,
         cliente_id: cliente.id,
         cliente_nome: nome.trim(),
@@ -140,19 +145,16 @@ export default function Checkout() {
         data_agendada: null,
       };
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("pedidos")
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .insert(payload as any)
-        .select("*")
-        .single();
+        .insert(payload as any);
 
       if (error) throw error;
-      const pedido = data as Pedido;
 
       limpar();
       toast.success("Pedido enviado com sucesso!");
-      navigate(`/${loja.slug}/pedido/${pedido.id}`, { replace: true });
+      navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
     } catch (err) {
       console.error(err);
       toast.error("Erro ao enviar pedido. Tente novamente.");
