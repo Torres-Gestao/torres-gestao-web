@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import type { Loja, Pedido, StatusPedido } from "@/types/db";
+import type { Loja, Pedido, status_web } from "@/types/db";
 import { brl } from "@/lib/money";
 import {
   CheckCircle2,
@@ -17,7 +17,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 interface Step {
-  key: StatusPedido;
+  key: status_web;
   label: string;
   descricao: string;
   icon: LucideIcon;
