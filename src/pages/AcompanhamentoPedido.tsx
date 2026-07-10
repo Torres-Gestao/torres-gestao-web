@@ -48,32 +48,26 @@ export default function AcompanhamentoPedido() {
     if (!id) return;
     let ativo = true;
 
-    (async () => {
-      const { data, error } = await supabase
-        .from("pedidos")
-        .select("*")
-        .eq("id", id)
-        .maybeSingle();
+    async function carregar(inicial: boolean) {
+      // Leitura restrita: a função só retorna o pedido correspondente ao id,
+      // então o cliente final vê apenas o próprio pedido.
+      const { data, error } = await supabase.rpc("get_pedido", { p_id: id });
       if (!ativo) return;
-      if (error) setErro(error.message);
-      setPedido((data as Pedido | null) ?? null);
-      setLoading(false);
-    })();
+      if (error) {
+        if (inicial) setErro(error.message);
+      } else {
+        setPedido(((data as Pedido[] | null) ?? [])[0] ?? null);
+      }
+      if (inicial) setLoading(false);
+    }
 
-    const channel = supabase
-      .channel(`pedido-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "pedidos", filter: `id=eq.${id}` },
-        (payload) => {
-          setPedido((prev) => ({ ...(prev ?? {}), ...(payload.new as Pedido) }));
-        },
-      )
-      .subscribe();
+    carregar(true);
+    // Sem SELECT direto na tabela não há realtime público; usamos polling.
+    const intervalo = setInterval(() => carregar(false), 8000);
 
     return () => {
       ativo = false;
-      supabase.removeChannel(channel);
+      clearInterval(intervalo);
     };
   }, [id]);
 
