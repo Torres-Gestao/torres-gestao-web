@@ -90,8 +90,11 @@ export default function AcompanhamentoPedido() {
     );
   }
 
-  const cancelado = pedido.status === "cancelado";
-  const atual = stepIndex(pedido.status);
+  // O sistema on-premise atualiza o campo status_web; usamos ele como fonte
+  // principal e caímos em status apenas se status_web estiver nulo.
+  const statusAtual = pedido.status_web ?? pedido.status;
+  const cancelado = statusAtual === "cancelado";
+  const atual = stepIndex(statusAtual);
   const brand = "var(--brand-primary, #6B21A8)";
 
   return (
