@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { useOutletContext, useNavigate, Link } from "react-router-dom";
-import type { FormaPagamento, Loja, Modalidade, Pedido } from "@/types/db";
+import type { Cliente, FormaPagamento, Loja, Modalidade, Pedido } from "@/types/db";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import { supabase } from "@/lib/supabase";
-import { montarMensagemPedido, whatsappUrl } from "@/lib/whatsapp";
 import { brl, formatPhone, onlyDigits } from "@/lib/money";
 import { buscarCep, formatCep } from "@/lib/cep";
 import { Button } from "@/components/ui/button";
@@ -60,6 +59,47 @@ export default function Checkout() {
     setUf(r.uf);
   }
 
+  async function upsertCliente(telefoneDigits: string): Promise<Cliente> {
+    const endereco =
+      modalidade === "delivery"
+        ? { rua, numero, bairro, complemento, cidade, uf, cep: formatCep(cep) }
+        : null;
+
+    // Tenta encontrar cliente existente pela loja + telefone
+    const { data: existente, error: selErr } = await supabase
+      .from("clientes")
+      .select("*")
+      .eq("loja_id", loja.id)
+      .eq("telefone", telefoneDigits)
+      .maybeSingle();
+    if (selErr) throw selErr;
+
+    if (existente) {
+      const { data: upd, error: updErr } = await supabase
+        .from("clientes")
+        .update({ nome: nome.trim(), endereco: endereco ?? (existente as Cliente).endereco } as never)
+        .eq("id", (existente as Cliente).id)
+        .select("*")
+        .single();
+      if (updErr) throw updErr;
+      return upd as Cliente;
+    }
+
+    const { data: novo, error: insErr } = await supabase
+      .from("clientes")
+      .insert({
+        loja_id: loja.id,
+        nome: nome.trim(),
+        telefone: telefoneDigits,
+        endereco,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+      .select("*")
+      .single();
+    if (insErr) throw insErr;
+    return novo as Cliente;
+  }
+
   async function enviar() {
     if (!nome.trim() || !telefone.trim()) {
       toast.error("Preencha seu nome e telefone");
@@ -69,17 +109,17 @@ export default function Checkout() {
       toast.error("Preencha o endereço de entrega");
       return;
     }
-    if (!loja.telefone_contato) {
-      toast.error("Loja sem telefone cadastrado — contate o estabelecimento.");
-      return;
-    }
 
     setEnviando(true);
     try {
+      const telefoneDigits = onlyDigits(telefone);
+      const cliente = await upsertCliente(telefoneDigits);
+
       const payload = {
         loja_id: loja.id,
+        cliente_id: cliente.id,
         cliente_nome: nome.trim(),
-        cliente_telefone: onlyDigits(telefone),
+        cliente_telefone: telefoneDigits,
         modalidade,
         rua: modalidade === "delivery" ? rua : null,
         numero: modalidade === "delivery" ? numero : null,
@@ -94,6 +134,7 @@ export default function Checkout() {
         total_general: subtotal,
         forma_pagamento: formaPagamento,
         observacao: observacao.trim() || null,
+        status: "pendente" as const,
         status_web: "pendente" as const,
         agendado: false,
         data_agendada: null,
@@ -109,16 +150,9 @@ export default function Checkout() {
       if (error) throw error;
       const pedido = data as Pedido;
 
-      const mensagem = montarMensagemPedido(pedido, loja.nome);
-      const url = whatsappUrl(loja.telefone_contato, mensagem);
-
       limpar();
-      // Abre WhatsApp em nova aba e vai para a confirmação
-      window.open(url, "_blank", "noopener");
-      navigate(`/${loja.slug}/pedido/${pedido.numero_pedido}`, {
-        replace: true,
-        state: { pedido },
-      });
+      toast.success("Pedido enviado com sucesso!");
+      navigate(`/${loja.slug}/pedido/${pedido.id}`, { replace: true });
     } catch (err) {
       console.error(err);
       toast.error("Erro ao enviar pedido. Tente novamente.");
@@ -146,7 +180,7 @@ export default function Checkout() {
             <Input id="nome" value={nome} onChange={(e) => setNome(e.target.value)} />
           </div>
           <div>
-            <Label htmlFor="tel">WhatsApp</Label>
+            <Label htmlFor="tel">WhatsApp / Telefone</Label>
             <Input
               id="tel"
               value={telefone}
@@ -291,11 +325,7 @@ export default function Checkout() {
           disabled={enviando}
           onClick={enviar}
         >
-          {enviando ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            "Enviar pedido pelo WhatsApp"
-          )}
+          {enviando ? <Loader2 className="h-5 w-5 animate-spin" /> : "Finalizar Pedido"}
         </Button>
       </div>
     </div>
