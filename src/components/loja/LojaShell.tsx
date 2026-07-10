@@ -45,7 +45,7 @@ export default function LojaShell() {
   return (
     <div className="min-h-screen bg-background pb-28">
       <LojaHeader loja={loja} />
-      <main className="mx-auto w-full max-w-3xl px-4 pt-4">
+      <main className="mx-auto w-full max-w-5xl px-4 pt-4">
         <Outlet context={{ loja }} />
       </main>
       <FloatingCart slug={loja.slug} />
