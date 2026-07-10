@@ -29,7 +29,7 @@ const STEPS: Step[] = [
   { key: "em_preparo", label: "Em preparo",       descricao: "Seu pedido está sendo preparado", icon: ChefHat },
   { key: "pronto",     label: "Pronto",           descricao: "Pronto para retirada/envio",      icon: Package },
   { key: "em_rota",    label: "Saiu para entrega", descricao: "A caminho do endereço",          icon: Bike },
-  { key: "entregue",  label: "Concluído",        descricao: "Pedido entregue. Bom apetite!",   icon: PartyPopper },
+  { key: "entregue",   label: "Concluído",        descricao: "Pedido entregue. Bom apetite!",   icon: PartyPopper },
 ];
 
 function stepIndex(status: string): number {
@@ -90,9 +90,9 @@ export default function AcompanhamentoPedido() {
     );
   }
 
-  // O sistema on-premise atualiza o campo status_web; usamos ele como fonte
-  // principal e caímos em status apenas se status_web estiver nulo.
-  const statusAtual = pedido.status_web ?? pedido.status;
+  // O sistema on-premise atualiza o campo status_web, que é a única fonte
+  // do status exibido.
+  const statusAtual = pedido.status_web ?? "";
   const cancelado = statusAtual === "cancelado";
   const atual = stepIndex(statusAtual);
   const brand = "var(--brand-primary, #6B21A8)";
