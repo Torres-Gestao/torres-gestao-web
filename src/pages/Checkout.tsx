@@ -101,7 +101,8 @@ export default function Checkout() {
 
       const { data, error } = await supabase
         .from("pedidos")
-        .insert(payload)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .insert(payload as any)
         .select("*")
         .single();
 

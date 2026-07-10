@@ -10,7 +10,7 @@ async function fetchLoja(slug: string): Promise<Loja | null> {
     .eq("slug", slug)
     .maybeSingle();
   if (error) throw error;
-  return (data as Loja) ?? null;
+  return (data as Loja | null) ?? null;
 }
 
 export function useLoja(slug: string | undefined) {
