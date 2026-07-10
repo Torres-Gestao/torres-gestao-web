@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import type { Loja, Pedido, status_web } from "@/types/db";
+import type { Loja, Pedido, StatusPedido } from "@/types/db";
 import { brl } from "@/lib/money";
 import {
   CheckCircle2,
@@ -17,7 +17,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 interface Step {
-  key: status_web;
+  key: StatusPedido;
   label: string;
   descricao: string;
   icon: LucideIcon;
@@ -25,7 +25,7 @@ interface Step {
 
 const STEPS: Step[] = [
   { key: "pendente",   label: "Pedido recebido",  descricao: "Aguardando confirmação da loja", icon: Clock },
-  { key: "confirmado",     label: "Pedido aceito",    descricao: "A loja confirmou seu pedido",     icon: CheckCircle2 },
+  { key: "aceito",     label: "Pedido aceito",    descricao: "A loja confirmou seu pedido",     icon: CheckCircle2 },
   { key: "em_preparo", label: "Em preparo",       descricao: "Seu pedido está sendo preparado", icon: ChefHat },
   { key: "pronto",     label: "Pronto",           descricao: "Pronto para retirada/envio",      icon: Package },
   { key: "em_rota",    label: "Saiu para entrega", descricao: "A caminho do endereço",          icon: Bike },
