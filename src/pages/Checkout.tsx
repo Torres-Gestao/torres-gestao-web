@@ -77,8 +77,8 @@ export default function Checkout() {
     if (existente) {
       const { data: upd, error: updErr } = await supabase
         .from("clientes")
-        .update({ nome: nome.trim(), endereco: endereco ?? existente.endereco })
-        .eq("id", existente.id)
+        .update({ nome: nome.trim(), endereco: endereco ?? (existente as Cliente).endereco } as never)
+        .eq("id", (existente as Cliente).id)
         .select("*")
         .single();
       if (updErr) throw updErr;
@@ -92,7 +92,8 @@ export default function Checkout() {
         nome: nome.trim(),
         telefone: telefoneDigits,
         endereco,
-      })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
       .select("*")
       .single();
     if (insErr) throw insErr;
