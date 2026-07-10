@@ -25,7 +25,7 @@ interface Step {
 
 const STEPS: Step[] = [
   { key: "pendente",   label: "Pedido recebido",  descricao: "Aguardando confirmação da loja", icon: Clock },
-  { key: "aceito",     label: "Pedido aceito",    descricao: "A loja confirmou seu pedido",     icon: CheckCircle2 },
+  { key: "confirmado",     label: "Pedido aceito",    descricao: "A loja confirmou seu pedido",     icon: CheckCircle2 },
   { key: "em_preparo", label: "Em preparo",       descricao: "Seu pedido está sendo preparado", icon: ChefHat },
   { key: "pronto",     label: "Pronto",           descricao: "Pronto para retirada/envio",      icon: Package },
   { key: "em_rota",    label: "Saiu para entrega", descricao: "A caminho do endereço",          icon: Bike },
