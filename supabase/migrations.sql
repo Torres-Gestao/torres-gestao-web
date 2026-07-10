@@ -52,6 +52,43 @@ ALTER TABLE public.pedidos
 CREATE INDEX IF NOT EXISTS pedidos_cliente_id_idx ON public.pedidos(cliente_id);
 CREATE INDEX IF NOT EXISTS pedidos_status_idx     ON public.pedidos(status);
 
+-- ---------- Leitura segura de pedidos (acompanhamento) -------------------
+-- O cliente é anônimo e só conhece o UUID do próprio pedido (gerado no
+-- checkout). Em vez de liberar SELECT em toda a tabela (o que permitiria
+-- LISTAR todos os pedidos e vazar dados de outros clientes), expomos apenas
+-- uma função que devolve o pedido correspondente ao id informado. Assim o
+-- cliente final enxerga somente o próprio pedido e não é possível enumerar
+-- a tabela.
+
+-- Garante que anon NÃO tenha SELECT direto na tabela.
+REVOKE SELECT ON public.pedidos FROM anon, authenticated;
+DROP POLICY IF EXISTS "pedidos_public_select" ON public.pedidos;
+
+CREATE OR REPLACE FUNCTION public.get_pedido(p_id uuid)
+RETURNS SETOF public.pedidos
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT * FROM public.pedidos WHERE id = p_id;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_pedido(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_pedido(uuid) TO anon, authenticated;
+
 -- ---------- Realtime -----------------------------------------------------
--- Habilita o canal de mudança para a tela de acompanhamento.
-ALTER PUBLICATION supabase_realtime ADD TABLE public.pedidos;
+-- Mantido para painéis autenticados da loja. A tela pública de
+-- acompanhamento usa polling via get_pedido() (não recebe eventos realtime,
+-- pois não tem SELECT direto na tabela).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'pedidos'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.pedidos;
+  END IF;
+END$$;
