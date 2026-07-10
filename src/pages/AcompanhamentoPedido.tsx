@@ -29,7 +29,7 @@ const STEPS: Step[] = [
   { key: "em_preparo", label: "Em preparo",       descricao: "Seu pedido está sendo preparado", icon: ChefHat },
   { key: "pronto",     label: "Pronto",           descricao: "Pronto para retirada/envio",      icon: Package },
   { key: "em_rota",    label: "Saiu para entrega", descricao: "A caminho do endereço",          icon: Bike },
-  { key: "concluido",  label: "Concluído",        descricao: "Pedido entregue. Bom apetite!",   icon: PartyPopper },
+  { key: "entregue",  label: "Concluído",        descricao: "Pedido entregue. Bom apetite!",   icon: PartyPopper },
 ];
 
 function stepIndex(status: string): number {
