@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import type { Loja, Pedido } from "@/types/db";
@@ -41,12 +41,18 @@ export default function AcompanhamentoPedido() {
   const { loja } = useOutletContext<{ loja: Loja }>();
   const { id } = useParams<{ id: string }>();
   const [pedido, setPedido] = useState<Pedido | null>(null);
+  const pedidoRef = useRef<Pedido | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
+    pedidoRef.current = pedido;
+  }, [pedido]);
+
+  useEffect(() => {
     if (!id) return;
     let ativo = true;
+    let falhasConsecutivas = 0;
 
     async function carregar(inicial: boolean) {
       // Leitura restrita: a função só retorna o pedido correspondente ao id,
@@ -55,8 +61,13 @@ export default function AcompanhamentoPedido() {
       const { data, error } = await (supabase.rpc as any)("get_pedido", { p_id: id });
       if (!ativo) return;
       if (error) {
-        if (inicial) setErro(error.message);
+        falhasConsecutivas += 1;
+        if (!pedidoRef.current && falhasConsecutivas >= 2) {
+          setErro("Não foi possível consultar o pedido agora. Tentando novamente...");
+        }
       } else {
+        falhasConsecutivas = 0;
+        setErro(null);
         setPedido(((data as Pedido[] | null) ?? [])[0] ?? null);
       }
       if (inicial) setLoading(false);
@@ -80,10 +91,10 @@ export default function AcompanhamentoPedido() {
     );
   }
 
-  if (erro || !pedido) {
+  if (!pedido) {
     return (
       <div className="py-16 text-center">
-        <p className="text-muted-foreground">Pedido não encontrado.</p>
+        <p className="text-muted-foreground">{erro ?? "Pedido não encontrado."}</p>
         <Link to={`/${loja.slug}`} className="mt-4 inline-block text-sm underline">
           Voltar ao cardápio
         </Link>
@@ -160,6 +171,12 @@ export default function AcompanhamentoPedido() {
             );
           })}
         </ol>
+      )}
+
+      {erro && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          {erro}
+        </div>
       )}
 
       {pedido.metodo_pgto && pedido.metodo_pgto !== "na_entrega" && (
