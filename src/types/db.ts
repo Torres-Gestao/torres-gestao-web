@@ -190,13 +190,8 @@ export interface Pedido {
   pago_em: string | null;
 }
 
-export interface LojaPagamentoConfigPublic {
-  loja_id: string;
-  provider: PaymentProvider;
-  metodos_aceitos: MetodoPagamento[];
-  aceita_na_entrega: boolean;
-  ativo: boolean;
-}
+
+
 
 export interface Database {
   public: {
