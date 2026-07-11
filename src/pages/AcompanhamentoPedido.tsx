@@ -165,13 +165,25 @@ export default function AcompanhamentoPedido() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Resumo
         </h2>
-        <ul className="space-y-1 text-sm">
+        <ul className="space-y-2 text-sm">
           {pedido.itens.map((it, i) => (
-            <li key={i} className="flex justify-between">
-              <span>
-                {it.quantidade}x {it.nome}
-              </span>
-              <span>{brl(it.subtotal)}</span>
+            <li key={i}>
+              <div className="flex justify-between">
+                <span>
+                  {it.quantidade}x {it.nome}
+                </span>
+                <span>{brl(it.subtotal)}</span>
+              </div>
+              {it.respostas?.map((r) =>
+                r.escolhas.length > 0 ? (
+                  <p key={r.pergunta_id} className="pl-4 text-xs text-muted-foreground">
+                    {r.texto}: {r.escolhas.map((e) => e.nome).join(", ")}
+                  </p>
+                ) : null,
+              )}
+              {it.observacao && (
+                <p className="pl-4 text-xs italic text-muted-foreground">{it.observacao}</p>
+              )}
             </li>
           ))}
         </ul>
