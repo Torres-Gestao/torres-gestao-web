@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import type { Categoria, Produto } from "@/types/db";
+import type { Categoria, Pergunta, Produto } from "@/types/db";
 
 export interface CategoriaComProdutos extends Categoria {
   produtos: Produto[];
@@ -59,6 +59,26 @@ export function useCatalogo(lojaId: string | undefined) {
   return useQuery({
     queryKey: ["catalogo", lojaId],
     queryFn: () => fetchCatalogo(lojaId!),
+    enabled: !!lojaId,
+    staleTime: 60_000,
+  });
+}
+
+async function fetchPerguntas(lojaId: string): Promise<Pergunta[]> {
+  const { data, error } = await supabase
+    .from("perguntas")
+    .select("*")
+    .eq("loja_id", lojaId)
+    .eq("ativo", true)
+    .order("ordem", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as Pergunta[];
+}
+
+export function usePerguntas(lojaId: string | undefined) {
+  return useQuery({
+    queryKey: ["perguntas", lojaId],
+    queryFn: () => fetchPerguntas(lojaId!),
     enabled: !!lojaId,
     staleTime: 60_000,
   });
