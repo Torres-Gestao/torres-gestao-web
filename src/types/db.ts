@@ -181,6 +181,21 @@ export interface Pedido {
   created_at: string | null;
   agendado: boolean;
   data_agendada: string | null;
+  // ---- Pagamento online ----
+  status_pgto: StatusPagamento;
+  metodo_pgto: MetodoPagamento | null;
+  provider_preference_id: string | null;
+  provider_payment_id: string | null;
+  valor_pago: number | null;
+  pago_em: string | null;
+}
+
+export interface LojaPagamentoConfigPublic {
+  loja_id: string;
+  provider: PaymentProvider;
+  metodos_aceitos: MetodoPagamento[];
+  aceita_na_entrega: boolean;
+  ativo: boolean;
 }
 
 export interface Database {
