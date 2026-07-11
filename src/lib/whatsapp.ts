@@ -27,6 +27,11 @@ export function montarMensagemPedido(pedido: Pedido, nomeLoja: string): string {
   linhas.push("*Itens:*");
   for (const it of pedido.itens) {
     linhas.push(`• ${it.quantidade}x ${it.nome} — ${brl(it.subtotal)}`);
+    for (const r of it.respostas ?? []) {
+      if (r.escolhas.length > 0) {
+        linhas.push(`  ${r.texto}: ${r.escolhas.map((e) => e.nome).join(", ")}`);
+      }
+    }
     if (it.observacao) linhas.push(`  _obs: ${it.observacao}_`);
   }
 
