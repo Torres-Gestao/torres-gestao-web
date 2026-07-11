@@ -12,7 +12,6 @@ import { useCarrinho } from "@/hooks/useCarrinho";
 import { supabase } from "@/lib/supabase";
 import { brl, formatPhone, onlyDigits } from "@/lib/money";
 import { buscarCep, formatCep } from "@/lib/cep";
-import { onPremiseApi, OnPremiseApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -167,48 +166,12 @@ export default function Checkout() {
       const novoPedidoId = crypto.randomUUID();
       const isOnline = metodo !== "na_entrega" && metodo !== "dinheiro";
 
-      // Fluxo A: pagamento ONLINE -> chama o on-premise, que cria a preferência
-      // no gateway e salva o pedido no Supabase (com status_pgto='pendente').
-      if (isOnline) {
-        const returnUrl = `${window.location.origin}${window.location.pathname}#/${loja.slug}/pedido/${novoPedidoId}`;
-        const resp = await onPremiseApi.criarPedido({
-          pedido_id: novoPedidoId,
-          loja_id: loja.id,
-          loja_slug: loja.slug,
-          cliente: {
-            id: cliente.id,
-            nome: nome.trim(),
-            telefone: telefoneDigits,
-          },
-          modalidade,
-          endereco:
-            modalidade === "delivery"
-              ? {
-                  rua, numero, bairro,
-                  complemento: complemento || null,
-                  cidade, uf, cep: formatCep(cep),
-                }
-              : null,
-          itens,
-          total_general: subtotal,
-          observacao: observacao.trim() || null,
-          metodo_pgto: metodo,
-          return_url: returnUrl,
-        });
-
-        limpar();
-        toast.success("Redirecionando para o pagamento...");
-        if (resp.init_point) {
-          // Redireciona para o checkout do gateway (Mercado Pago).
-          window.location.href = resp.init_point;
-          return;
-        }
-        // Sem init_point cai no acompanhamento (raro).
-        navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
-        return;
-      }
-
-      // Fluxo B: pagamento NA ENTREGA -> insere direto no Supabase (fluxo atual).
+      // Fluxo único (POLLING): o front apenas grava o pedido no Supabase.
+      // Para pagamento online, o serviço on-premise (poller) detecta o pedido
+      // com status_pgto='pendente' e sem provider_preference_id, gera a
+      // preferência no gateway (PagBank/Mercado Pago) e grava
+      // provider_preference_id. A tela de acompanhamento faz polling e exibe
+      // o botão "Pagar agora" assim que a preferência estiver pronta.
       const payload = {
         id: novoPedidoId,
         loja_id: loja.id,
@@ -229,7 +192,7 @@ export default function Checkout() {
         total_general: subtotal,
         forma_pagamento: metodoToFormaLegada(metodo),
         metodo_pgto: metodo,
-        status_pgto: "nao_aplicavel" as const,
+        status_pgto: isOnline ? ("pendente" as const) : ("nao_aplicavel" as const),
         observacao: observacao.trim() || null,
         status: "pendente" as const,
         status_web: "pendente" as const,
@@ -244,15 +207,15 @@ export default function Checkout() {
       if (error) throw error;
 
       limpar();
-      toast.success("Pedido enviado com sucesso!");
+      toast.success(
+        isOnline
+          ? "Pedido registrado! Gerando o pagamento..."
+          : "Pedido enviado com sucesso!",
+      );
       navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
     } catch (err) {
       console.error(err);
-      const msg =
-        err instanceof OnPremiseApiError
-          ? `Erro no pagamento: ${err.message}`
-          : "Erro ao enviar pedido. Tente novamente.";
-      toast.error(msg);
+      toast.error("Erro ao enviar pedido. Tente novamente.");
     } finally {
       setEnviando(false);
     }
