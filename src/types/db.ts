@@ -42,6 +42,54 @@ export interface Produto {
 export type Modalidade = "delivery" | "retirada";
 export type FormaPagamento = "dinheiro" | "pix" | "cartao_credito";
 
+// ---------- Perguntas / complementos ----------
+export type PerguntaTipo = "observacao" | "adicao_produto";
+
+// Uma resposta possível pode vir em 3 formatos no jsonb do PDV.
+export type RespostaOpcao =
+  | string
+  | { tipo: "observacao"; ativo?: boolean; resposta: string }
+  | {
+      tipo: "produto";
+      nome: string;
+      ativo?: boolean;
+      preco: number;
+      imagem?: string | null;
+      produtoId?: string;
+    };
+
+export interface Pergunta {
+  id: string;
+  loja_id: string;
+  pdv_pergunta_id: string | null;
+  texto: string;
+  tipo: PerguntaTipo;
+  ordem: number;
+  min_selections: number;
+  max_selections: number;
+  required: boolean;
+  respostas: RespostaOpcao[];
+  produtos_vinculados: string[]; // lista de pdv_produto_id
+  ativo: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+// Escolha feita pelo cliente para uma pergunta (salva no pedido).
+export interface EscolhaResposta {
+  nome: string;
+  preco?: number;
+  produtoId?: string;
+}
+
+export interface RespostaSelecionada {
+  pergunta_id: string;
+  pdv_pergunta_id: string | null;
+  texto: string;
+  tipo: PerguntaTipo;
+  escolhas: EscolhaResposta[];
+}
+
 export type StatusPedido =
   | "pendente"
   | "aceito"
@@ -74,12 +122,14 @@ export interface Cliente {
 }
 
 export interface PedidoItem {
+  uid?: string; // identidade da linha no carrinho (produto + respostas)
   produto_id: string;
   nome: string;
   quantidade: number;
   preco_unitario: number;
   subtotal: number;
   observacao?: string;
+  respostas?: RespostaSelecionada[];
 }
 
 export interface Pedido {
@@ -116,6 +166,7 @@ export interface Database {
       lojas: { Row: Loja; Insert: Partial<Loja>; Update: Partial<Loja> };
       categorias: { Row: Categoria; Insert: Partial<Categoria>; Update: Partial<Categoria> };
       produtos: { Row: Produto; Insert: Partial<Produto>; Update: Partial<Produto> };
+      perguntas: { Row: Pergunta; Insert: Partial<Pergunta>; Update: Partial<Pergunta> };
       clientes: { Row: Cliente; Insert: Partial<Cliente>; Update: Partial<Cliente> };
       pedidos: {
         Row: Pedido;
