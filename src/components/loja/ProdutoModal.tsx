@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Produto, RespostaSelecionada } from "@/types/db";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -120,6 +120,9 @@ export default function ProdutoModal({ produto, onClose }: Props) {
         <div className="space-y-4 p-5">
           <DialogHeader>
             <DialogTitle className="text-lg">{produto.nome}</DialogTitle>
+            <DialogDescription className="sr-only">
+              Personalize o item, escolha os adicionais e confirme a quantidade.
+            </DialogDescription>
           </DialogHeader>
           {produto.descricao && (
             <p className="text-sm text-muted-foreground">{produto.descricao}</p>
