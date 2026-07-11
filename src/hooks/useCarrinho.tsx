@@ -1,18 +1,23 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { PedidoItem, Produto } from "@/types/db";
+import type { PedidoItem, Produto, RespostaSelecionada } from "@/types/db";
 
 interface CarrinhoLoja {
   slug: string;
   itens: PedidoItem[];
 }
 
+interface AdicionarExtras {
+  observacao?: string;
+  respostas?: RespostaSelecionada[];
+}
+
 interface CarrinhoContextValue {
   slug: string | null;
   itens: PedidoItem[];
   setSlug: (slug: string) => void;
-  adicionar: (produto: Produto, quantidade: number, observacao?: string) => void;
-  atualizarQuantidade: (produtoId: string, quantidade: number) => void;
-  remover: (produtoId: string) => void;
+  adicionar: (produto: Produto, quantidade: number, extras?: AdicionarExtras) => void;
+  atualizarQuantidade: (uid: string, quantidade: number) => void;
+  remover: (uid: string) => void;
   limpar: () => void;
   quantidadeTotal: number;
   subtotal: number;
@@ -21,6 +26,27 @@ interface CarrinhoContextValue {
 const CarrinhoContext = createContext<CarrinhoContextValue | null>(null);
 
 const STORAGE_KEY = "cardapio-carrinho-v1";
+
+// Soma dos adicionais escolhidos (respostas do tipo produto com preço).
+function totalAdicionais(respostas?: RespostaSelecionada[]): number {
+  if (!respostas) return 0;
+  return respostas.reduce(
+    (acc, r) => acc + r.escolhas.reduce((s, e) => s + (Number(e.preco) || 0), 0),
+    0,
+  );
+}
+
+// Assinatura para agrupar linhas idênticas (mesmo produto + mesmas respostas).
+function assinatura(produtoId: string, extras?: AdicionarExtras): string {
+  return JSON.stringify({
+    p: produtoId,
+    o: extras?.observacao ?? "",
+    r: (extras?.respostas ?? []).map((x) => ({
+      q: x.pergunta_id,
+      e: x.escolhas.map((c) => c.nome).sort(),
+    })),
+  });
+}
 
 function readStorage(): CarrinhoLoja | null {
   if (typeof window === "undefined") return null;
@@ -62,20 +88,25 @@ export function CarrinhoProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const adicionar = useCallback(
-    (produto: Produto, quantidade: number, observacao?: string) => {
+    (produto: Produto, quantidade: number, extras?: AdicionarExtras) => {
       if (quantidade <= 0) return;
+      const precoUnitario = Number(
+        (Number(produto.preco) + totalAdicionais(extras?.respostas)).toFixed(2),
+      );
+      const sig = assinatura(produto.id, extras);
       setState((prev) => {
         const base: CarrinhoLoja = prev ?? { slug: "", itens: [] };
-        const existente = base.itens.find((i) => i.produto_id === produto.id);
+        const existente = base.itens.find(
+          (i) => assinatura(i.produto_id, { observacao: i.observacao, respostas: i.respostas }) === sig,
+        );
         let itens: PedidoItem[];
         if (existente) {
           itens = base.itens.map((i) =>
-            i.produto_id === produto.id
+            i === existente
               ? {
                   ...i,
                   quantidade: i.quantidade + quantidade,
                   subtotal: Number(((i.quantidade + quantidade) * i.preco_unitario).toFixed(2)),
-                  observacao: observacao ?? i.observacao,
                 }
               : i,
           );
@@ -83,12 +114,14 @@ export function CarrinhoProvider({ children }: { children: ReactNode }) {
           itens = [
             ...base.itens,
             {
+              uid: crypto.randomUUID(),
               produto_id: produto.id,
               nome: produto.nome,
               quantidade,
-              preco_unitario: Number(produto.preco),
-              subtotal: Number((quantidade * Number(produto.preco)).toFixed(2)),
-              observacao,
+              preco_unitario: precoUnitario,
+              subtotal: Number((quantidade * precoUnitario).toFixed(2)),
+              observacao: extras?.observacao,
+              respostas: extras?.respostas,
             },
           ];
         }
@@ -98,16 +131,16 @@ export function CarrinhoProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const atualizarQuantidade = useCallback((produtoId: string, quantidade: number) => {
+  const atualizarQuantidade = useCallback((uid: string, quantidade: number) => {
     setState((prev) => {
       if (!prev) return prev;
       if (quantidade <= 0) {
-        return { ...prev, itens: prev.itens.filter((i) => i.produto_id !== produtoId) };
+        return { ...prev, itens: prev.itens.filter((i) => i.uid !== uid) };
       }
       return {
         ...prev,
         itens: prev.itens.map((i) =>
-          i.produto_id === produtoId
+          i.uid === uid
             ? { ...i, quantidade, subtotal: Number((quantidade * i.preco_unitario).toFixed(2)) }
             : i,
         ),
@@ -115,9 +148,9 @@ export function CarrinhoProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const remover = useCallback((produtoId: string) => {
+  const remover = useCallback((uid: string) => {
     setState((prev) =>
-      prev ? { ...prev, itens: prev.itens.filter((i) => i.produto_id !== produtoId) } : prev,
+      prev ? { ...prev, itens: prev.itens.filter((i) => i.uid !== uid) } : prev,
     );
   }, []);
 
