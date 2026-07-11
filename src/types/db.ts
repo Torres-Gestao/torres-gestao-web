@@ -42,6 +42,29 @@ export interface Produto {
 export type Modalidade = "delivery" | "retirada";
 export type FormaPagamento = "dinheiro" | "pix" | "cartao_credito";
 
+// Métodos aceitos no pagamento online / na entrega
+export type MetodoPagamento = "pix" | "cartao_credito" | "cartao_debito" | "dinheiro" | "na_entrega";
+
+// Status do pagamento (espelha o enum status_pagamento no Postgres)
+export type StatusPagamento =
+  | "nao_aplicavel"
+  | "pendente"
+  | "em_processo"
+  | "aprovado"
+  | "recusado"
+  | "estornado"
+  | "cancelado";
+
+export type PaymentProvider = "mercadopago" | "stone" | "cielo" | "pagarme" | "asaas";
+
+export interface LojaPagamentoPublico {
+  loja_id: string;
+  provider: PaymentProvider;
+  metodos_aceitos: MetodoPagamento[];
+  aceita_na_entrega: boolean;
+  ativo: boolean;
+}
+
 // ---------- Perguntas / complementos ----------
 export type PerguntaTipo = "observacao" | "adicao_produto";
 
