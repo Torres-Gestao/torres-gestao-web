@@ -51,7 +51,8 @@ export default function AcompanhamentoPedido() {
     async function carregar(inicial: boolean) {
       // Leitura restrita: a função só retorna o pedido correspondente ao id,
       // então o cliente final vê apenas o próprio pedido.
-      const { data, error } = await supabase.rpc("get_pedido", { p_id: id });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase.rpc as any)("get_pedido", { p_id: id });
       if (!ativo) return;
       if (error) {
         if (inicial) setErro(error.message);
@@ -160,6 +161,35 @@ export default function AcompanhamentoPedido() {
           })}
         </ol>
       )}
+
+      {pedido.metodo_pgto && pedido.metodo_pgto !== "na_entrega" && (
+        <div className="mt-6 rounded-xl border bg-card p-4">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Pagamento
+          </h2>
+          {pedido.status_pgto === "aprovado" ? (
+            <p className="text-sm font-medium text-green-600">✓ Pagamento aprovado</p>
+          ) : pedido.status_pgto === "recusado" || pedido.status_pgto === "cancelado" ? (
+            <p className="text-sm font-medium text-red-600">Pagamento não realizado</p>
+          ) : pedido.status_pgto === "em_processo" ? (
+            <p className="text-sm text-muted-foreground">Processando pagamento...</p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Pagamento pendente.</p>
+              {pedido.provider_preference_id && (
+                <a
+                  href={`https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=${pedido.provider_preference_id}`}
+                  className="inline-block rounded-md px-4 py-2 text-sm font-medium text-white"
+                  style={{ backgroundColor: brand }}
+                >
+                  Pagar agora
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
 
       <div className="mt-8 rounded-xl border bg-card p-4">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
