@@ -51,7 +51,8 @@ export default function AcompanhamentoPedido() {
     async function carregar(inicial: boolean) {
       // Leitura restrita: a função só retorna o pedido correspondente ao id,
       // então o cliente final vê apenas o próprio pedido.
-      const { data, error } = await supabase.rpc("get_pedido", { p_id: id });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase.rpc as any)("get_pedido", { p_id: id });
       if (!ativo) return;
       if (error) {
         if (inicial) setErro(error.message);
