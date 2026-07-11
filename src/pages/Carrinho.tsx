@@ -36,9 +36,19 @@ export default function Carrinho() {
 
       <ul className="divide-y rounded-xl border bg-card">
         {itens.map((it) => (
-          <li key={it.produto_id} className="flex items-start gap-3 p-4">
+          <li key={it.uid ?? it.produto_id} className="flex items-start gap-3 p-4">
             <div className="min-w-0 flex-1">
               <p className="font-medium leading-tight">{it.nome}</p>
+              {it.respostas?.map((r) =>
+                r.escolhas.length > 0 ? (
+                  <p key={r.pergunta_id} className="mt-0.5 text-xs text-muted-foreground">
+                    <span className="font-medium">{r.texto}:</span>{" "}
+                    {r.escolhas
+                      .map((e) => e.nome + (e.preco ? ` (+${brl(e.preco)})` : ""))
+                      .join(", ")}
+                  </p>
+                ) : null,
+              )}
               {it.observacao && (
                 <p className="mt-0.5 text-xs italic text-muted-foreground">{it.observacao}</p>
               )}
@@ -50,7 +60,7 @@ export default function Carrinho() {
                   variant="outline"
                   size="icon"
                   className="h-7 w-7"
-                  onClick={() => atualizarQuantidade(it.produto_id, it.quantidade - 1)}
+                  onClick={() => atualizarQuantidade(it.uid ?? "", it.quantidade - 1)}
                 >
                   <Minus className="h-3 w-3" />
                 </Button>
@@ -59,7 +69,7 @@ export default function Carrinho() {
                   variant="outline"
                   size="icon"
                   className="h-7 w-7"
-                  onClick={() => atualizarQuantidade(it.produto_id, it.quantidade + 1)}
+                  onClick={() => atualizarQuantidade(it.uid ?? "", it.quantidade + 1)}
                 >
                   <Plus className="h-3 w-3" />
                 </Button>
@@ -67,7 +77,7 @@ export default function Carrinho() {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold">{brl(it.subtotal)}</span>
                 <button
-                  onClick={() => remover(it.produto_id)}
+                  onClick={() => remover(it.uid ?? "")}
                   className="text-muted-foreground hover:text-destructive"
                   aria-label="Remover"
                 >
