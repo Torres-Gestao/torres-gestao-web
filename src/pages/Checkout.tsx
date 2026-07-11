@@ -1,17 +1,40 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOutletContext, useNavigate, Link } from "react-router-dom";
-import type { Cliente, FormaPagamento, Loja, Modalidade } from "@/types/db";
+import type {
+  Cliente,
+  FormaPagamento,
+  Loja,
+  LojaPagamentoPublico,
+  MetodoPagamento,
+  Modalidade,
+} from "@/types/db";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import { supabase } from "@/lib/supabase";
 import { brl, formatPhone, onlyDigits } from "@/lib/money";
 import { buscarCep, formatCep } from "@/lib/cep";
+import { onPremiseApi, OnPremiseApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, CreditCard, Banknote, QrCode } from "lucide-react";
 import { toast } from "sonner";
+
+// Mapeia método online -> forma_pagamento legada (para preservar compat).
+function metodoToFormaLegada(m: MetodoPagamento): FormaPagamento {
+  if (m === "pix") return "pix";
+  if (m === "cartao_credito" || m === "cartao_debito") return "cartao_credito";
+  return "dinheiro";
+}
+
+const METODO_LABELS: Record<MetodoPagamento, { label: string; icon: typeof QrCode }> = {
+  pix: { label: "PIX", icon: QrCode },
+  cartao_credito: { label: "Cartão de crédito", icon: CreditCard },
+  cartao_debito: { label: "Cartão de débito", icon: CreditCard },
+  dinheiro: { label: "Dinheiro", icon: Banknote },
+  na_entrega: { label: "Pagar na entrega/retirada", icon: Banknote },
+};
 
 export default function Checkout() {
   const { loja } = useOutletContext<{ loja: Loja }>();
@@ -28,10 +51,38 @@ export default function Checkout() {
   const [cidade, setCidade] = useState("");
   const [uf, setUf] = useState("");
   const [complemento, setComplemento] = useState("");
-  const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>("pix");
   const [observacao, setObservacao] = useState("");
   const [loadingCep, setLoadingCep] = useState(false);
   const [enviando, setEnviando] = useState(false);
+
+  // Config de pagamento da loja (view pública). Fallback: só "na_entrega".
+  const [pagCfg, setPagCfg] = useState<LojaPagamentoPublico | null>(null);
+  const [cfgLoading, setCfgLoading] = useState(true);
+  const [metodo, setMetodo] = useState<MetodoPagamento>("na_entrega");
+
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      const { data } = await supabase
+        .from("loja_pagamento_publico" as never)
+        .select("*")
+        .eq("loja_id", loja.id)
+        .maybeSingle();
+      if (!ativo) return;
+      const cfg = (data as LojaPagamentoPublico | null) ?? null;
+      setPagCfg(cfg);
+      // Escolha padrão: primeiro método online se aceita; senão na entrega.
+      if (cfg?.metodos_aceitos?.length) {
+        setMetodo(cfg.metodos_aceitos[0]);
+      } else {
+        setMetodo("na_entrega");
+      }
+      setCfgLoading(false);
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [loja.id]);
 
   if (itens.length === 0) {
     return (
@@ -65,7 +116,6 @@ export default function Checkout() {
         ? { rua, numero, bairro, complemento, cidade, uf, cep: formatCep(cep) }
         : null;
 
-    // Tenta encontrar cliente existente pela loja + telefone
     const { data: existente, error: selErr } = await supabase
       .from("clientes")
       .select("*")
@@ -114,11 +164,51 @@ export default function Checkout() {
     try {
       const telefoneDigits = onlyDigits(telefone);
       const cliente = await upsertCliente(telefoneDigits);
-
-      // id gerado no cliente: assim não dependemos de RETURNING (SELECT em
-      // pedidos foi revogado para o anônimo por privacidade).
       const novoPedidoId = crypto.randomUUID();
+      const isOnline = metodo !== "na_entrega" && metodo !== "dinheiro";
 
+      // Fluxo A: pagamento ONLINE -> chama o on-premise, que cria a preferência
+      // no gateway e salva o pedido no Supabase (com status_pgto='pendente').
+      if (isOnline) {
+        const returnUrl = `${window.location.origin}${window.location.pathname}#/${loja.slug}/pedido/${novoPedidoId}`;
+        const resp = await onPremiseApi.criarPedido({
+          pedido_id: novoPedidoId,
+          loja_id: loja.id,
+          loja_slug: loja.slug,
+          cliente: {
+            id: cliente.id,
+            nome: nome.trim(),
+            telefone: telefoneDigits,
+          },
+          modalidade,
+          endereco:
+            modalidade === "delivery"
+              ? {
+                  rua, numero, bairro,
+                  complemento: complemento || null,
+                  cidade, uf, cep: formatCep(cep),
+                }
+              : null,
+          itens,
+          total_general: subtotal,
+          observacao: observacao.trim() || null,
+          metodo_pgto: metodo,
+          return_url: returnUrl,
+        });
+
+        limpar();
+        toast.success("Redirecionando para o pagamento...");
+        if (resp.init_point) {
+          // Redireciona para o checkout do gateway (Mercado Pago).
+          window.location.href = resp.init_point;
+          return;
+        }
+        // Sem init_point cai no acompanhamento (raro).
+        navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
+        return;
+      }
+
+      // Fluxo B: pagamento NA ENTREGA -> insere direto no Supabase (fluxo atual).
       const payload = {
         id: novoPedidoId,
         loja_id: loja.id,
@@ -137,7 +227,9 @@ export default function Checkout() {
         total_produtos: subtotal,
         taxa_entrega: 0,
         total_general: subtotal,
-        forma_pagamento: formaPagamento,
+        forma_pagamento: metodoToFormaLegada(metodo),
+        metodo_pgto: metodo,
+        status_pgto: "nao_aplicavel" as const,
         observacao: observacao.trim() || null,
         status: "pendente" as const,
         status_web: "pendente" as const,
@@ -149,7 +241,6 @@ export default function Checkout() {
         .from("pedidos")
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .insert(payload as any);
-
       if (error) throw error;
 
       limpar();
@@ -157,11 +248,23 @@ export default function Checkout() {
       navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
     } catch (err) {
       console.error(err);
-      toast.error("Erro ao enviar pedido. Tente novamente.");
+      const msg =
+        err instanceof OnPremiseApiError
+          ? `Erro no pagamento: ${err.message}`
+          : "Erro ao enviar pedido. Tente novamente.";
+      toast.error(msg);
     } finally {
       setEnviando(false);
     }
   }
+
+  // Monta lista de métodos exibidos.
+  const metodosOnline = pagCfg?.ativo ? pagCfg.metodos_aceitos : [];
+  const mostraNaEntrega = !pagCfg || pagCfg.aceita_na_entrega;
+  const metodosDisponiveis: MetodoPagamento[] = [
+    ...metodosOnline,
+    ...(mostraNaEntrega ? (["na_entrega"] as MetodoPagamento[]) : []),
+  ];
 
   return (
     <div className="pb-10">
@@ -275,28 +378,45 @@ export default function Checkout() {
 
         <section className="space-y-3 rounded-xl border bg-card p-4">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Pagamento{" "}
-            <span className="ml-1 font-normal normal-case text-xs">(na entrega/retirada)</span>
+            Como você quer pagar?
           </h3>
-          <RadioGroup
-            value={formaPagamento}
-            onValueChange={(v) => setFormaPagamento(v as FormaPagamento)}
-            className="grid gap-2"
-          >
-            {[
-              { v: "pix", l: "PIX" },
-              { v: "dinheiro", l: "Dinheiro" },
-              { v: "cartao_credito", l: "Cartão de crédito" },
-            ].map((o) => (
-              <label
-                key={o.v}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
-              >
-                <RadioGroupItem value={o.v} />
-                {o.l}
-              </label>
-            ))}
-          </RadioGroup>
+          {cfgLoading ? (
+            <div className="flex justify-center py-3">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : metodosDisponiveis.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhum método de pagamento disponível para esta loja.
+            </p>
+          ) : (
+            <RadioGroup
+              value={metodo}
+              onValueChange={(v) => setMetodo(v as MetodoPagamento)}
+              className="grid gap-2"
+            >
+              {metodosDisponiveis.map((m) => {
+                const { label, icon: Icon } = METODO_LABELS[m];
+                const online = m !== "na_entrega";
+                return (
+                  <label
+                    key={m}
+                    className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+                  >
+                    <RadioGroupItem value={m} />
+                    <Icon className="h-5 w-5 text-muted-foreground" />
+                    <div className="flex-1">
+                      <p className="font-medium">{label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {online
+                          ? "Pagamento online, seguro pelo Mercado Pago"
+                          : "Pague ao receber o pedido"}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
+            </RadioGroup>
+          )}
         </section>
 
         <section className="space-y-2 rounded-xl border bg-card p-4">
@@ -324,10 +444,16 @@ export default function Checkout() {
         <Button
           className="h-12 w-full text-base"
           style={{ backgroundColor: "var(--brand-primary, #6B21A8)" }}
-          disabled={enviando}
+          disabled={enviando || metodosDisponiveis.length === 0}
           onClick={enviar}
         >
-          {enviando ? <Loader2 className="h-5 w-5 animate-spin" /> : "Finalizar Pedido"}
+          {enviando ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : metodo !== "na_entrega" && metodo !== "dinheiro" ? (
+            "Ir para o pagamento"
+          ) : (
+            "Finalizar Pedido"
+          )}
         </Button>
       </div>
     </div>
