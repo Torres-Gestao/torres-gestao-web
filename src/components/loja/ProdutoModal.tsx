@@ -107,9 +107,9 @@ export default function ProdutoModal({ produto, onClose }: Props) {
 
   return (
     <Dialog open={!!produto} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-md gap-0 overflow-y-auto p-0">
+      <DialogContent className="flex max-h-[90vh] max-w-md flex-col gap-0 overflow-y-auto p-0">
         {produto.imagem_url && (
-          <div className="aspect-[16/10] w-full overflow-hidden bg-muted">
+          <div className="aspect-[16/10] w-full shrink-0 overflow-hidden bg-muted">
             <img
               src={produto.imagem_url}
               alt={produto.nome}
