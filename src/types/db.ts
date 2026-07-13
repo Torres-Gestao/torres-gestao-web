@@ -186,6 +186,7 @@ export interface Pedido {
   metodo_pgto: MetodoPagamento | null;
   provider_preference_id: string | null;
   provider_payment_id: string | null;
+  init_point: string | null;
   valor_pago: number | null;
   pago_em: string | null;
 }
