@@ -318,12 +318,14 @@ export default function Checkout() {
         .insert(payload as any);
       if (error) throw error;
 
-      limpar();
-
       if (isOnline) {
+        // Seta a tela de espera ANTES de limpar o carrinho, para nunca cair
+        // na tela "Adicione itens" (o limpar esvazia os itens).
         setAguardando({ pedidoId: novoPedidoId, status: "polling" });
+        limpar();
         aguardarInitPoint(novoPedidoId);
       } else {
+        limpar();
         toast.success("Pedido enviado com sucesso!");
         navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
       }
