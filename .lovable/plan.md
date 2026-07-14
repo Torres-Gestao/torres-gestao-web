@@ -1,117 +1,111 @@
+## Objetivo
 
-# Plano — Pagamento Online Multi‑Loja (Mercado Pago + extensível)
+1. Coletar **CPF e email** do cliente no checkout (obrigatórios apenas quando o pagamento for online — Asaas exige).
+2. Corrigir o fluxo: quando o método for **online**, o cliente **paga antes** de ir para a tela de acompanhamento.
 
-## Visão geral
+---
 
-Cada dona de loja cadastra as próprias credenciais do Mercado Pago no painel on‑premise. Essas credenciais ficam salvas no Supabase, vinculadas ao `loja_id`. Quando o cliente final finaliza o pedido, o **backend on‑premise** cria uma preferência de pagamento no Mercado Pago **usando o token da loja daquele pedido** — assim o dinheiro cai direto na conta da lojista, sem passar por você.
+## 1) Banco (SQL — rodar no Supabase)
 
-O front (vitrine no GitHub Pages) só chama o seu on‑premise; nunca fala com o Mercado Pago direto e nunca vê o token da loja.
+```sql
+alter table public.clientes
+  add column if not exists email text,
+  add column if not exists cpf  text;
 
-**Sobre a sua pergunta (Cielo, Stone, etc.):** sim, esse desenho já nasce preparado. A tabela de credenciais é polimórfica (`provider` + `credentials JSONB`) e o código do checkout usa um "adaptador" por provider. No futuro basta adicionar `provider = 'stone'` com um novo adaptador — sem quebrar o que já existe. Detalhes técnicos ao final.
+alter table public.pedidos
+  add column if not exists cliente_email text,
+  add column if not exists cliente_cpf   text;
+```
 
-## Fluxo do cliente final
+Arquivo: `supabase/migrations_003_cliente_pagador.sql`. Sem mudança de RLS.
+
+---
+
+## 2) Frontend — Checkout: novos campos
+
+Em `src/pages/Checkout.tsx`, na seção "Seus dados":
+
+- Novo campo **Email** (input `type="email"`).
+- Novo campo **CPF** com máscara `000.000.000-00`.
+
+**Regra:** só obrigatórios quando `metodo ∈ {pix, cartao_credito, cartao_debito}`. Para `na_entrega`/`dinheiro`: opcionais (se preenchidos, salvamos mesmo assim).
+
+**Validação** (novo arquivo `src/lib/validators.ts`):
+- `formatCpf(v)` — máscara.
+- `isValidCpf(v)` — 11 dígitos + dígito verificador.
+- `isValidEmail(v)` — regex simples.
+
+**Persistência:**
+- `upsertCliente` grava `email` e `cpf` (atualiza sempre que vier preenchido).
+- Payload do `insert` em `pedidos` inclui `cliente_email` e `cliente_cpf`.
+
+---
+
+## 3) Frontend — Novo fluxo: pagar ANTES de acompanhar
+
+Fluxo atual (confuso): insere pedido → vai pra `/pedido/:id` → botão "Pagar agora" aparece só depois do poller.
+
+Fluxo novo para método **online**:
 
 ```text
-Vitrine (GitHub Pages)
-   │  1. Cliente monta carrinho e clica "Finalizar Pedido"
-   ▼
-On-premise API  ──2. Salva pedido no Supabase (status_pgto='pendente')
-   │            ──3. Lê credenciais da loja (Supabase)
-   │            ──4. Cria "preferência" no Mercado Pago (métodos: PIX/cartão conforme loja)
-   ▼
-Retorna { init_point } → Vitrine redireciona cliente para o checkout do Mercado Pago
-                        │
-                        ▼
-                Cliente paga (PIX ou cartão) na conta da lojista
-                        │
-                        ▼
-      Mercado Pago → Webhook → On-premise → Supabase
-                     (atualiza status_pgto: aprovado / recusado / estornado)
-                        │
-                        ▼
-      Realtime → Tela de Acompanhamento do pedido atualiza sozinha
+[Checkout — clique em "Ir para o pagamento"]
+        │
+        ▼
+[Insert do pedido no Supabase (status_pgto=pendente)]
+        │
+        ▼
+[Tela "Aguardando pagamento" — overlay dentro do próprio Checkout]
+   • Spinner + "Estamos gerando seu pagamento seguro..."
+   • Polling a cada 2s em pedidos(id) buscando init_point
+        │
+        ├─ init_point chegou (≤ 60s):
+        │     window.location.href = init_point  → Asaas cuida do resto
+        │
+        └─ timeout 60s sem init_point:
+              Mensagem de erro + 2 botões:
+                • "Tentar de novo"  → re-inicia o polling
+                • "Ver meu pedido"  → navega para /pedido/:id (fallback)
 ```
 
-Para lojas que também aceitam "pagar na entrega", mantemos essa opção ao lado do pagamento online — o cliente escolhe qual usar no checkout.
+Após pagar no Asaas, o `return_url` (`#/:slug/pedido/:id`) traz o cliente para a tela de acompanhamento — já com o pagamento processado ou "em_processo" até o webhook.
 
-## Fluxo da dona da loja (onboarding de pagamento)
+Para **`na_entrega`/`dinheiro`**: comportamento atual preservado — vai direto para `/pedido/:id`.
 
-No painel on‑premise, aba **"Pagamentos"** da loja:
-
-1. Escolhe o provedor (V1: só Mercado Pago; futuramente Stone/Cielo aparecem no dropdown).
-2. **Opção recomendada:** clica "Conectar Mercado Pago" → OAuth do MP → devolve `access_token` + `refresh_token` já vinculados à conta dela. Zero risco de a lojista colar token errado.
-3. **Opção alternativa (mais rápida de implementar):** ela cola o `Access Token` de produção que pega no painel do MP dela.
-4. Marca quais métodos aceita (PIX, crédito, débito) e se quer manter "pagar na entrega".
-
-## Mudanças no Supabase
-
-Novas tabelas / colunas (você roda o SQL no Editor):
-
-- `loja_pagamento_config` — 1‑para‑1 com `lojas`: `provider`, `credentials JSONB` (criptografado no app), `metodos_aceitos[]`, `ativo`, `oauth_refresh_token`.
-- `pedidos`: adicionar `status_pgto` (`pendente|aprovado|recusado|estornado|nao_aplicavel`), `metodo_pgto` (`pix|cartao|dinheiro|na_entrega`), `provider_payment_id`, `provider_preference_id`, `valor_total`.
-- `pagamento_eventos` — log de tudo que chega no webhook (auditoria + debugging).
-- RLS: `loja_pagamento_config` **nunca** exposto ao `anon` — só service role (usado pelo on‑premise).
-
-## Mudanças no frontend (Vitrine)
-
-- `Checkout.tsx`: novo passo "Como quer pagar?" com as opções que a loja habilitou. Se escolher online, POST para `POST {ONPREMISE_URL}/pedidos` e redirect para `init_point` retornado. Se escolher "na entrega", mantém o fluxo atual.
-- `AcompanhamentoPedido.tsx`: mostrar bloco de status de pagamento (com timeline própria) e, se `status_pgto='pendente'` e for PIX, exibir botão "Ver QR Code" que reabre o `init_point`.
-- Variável `VITE_ONPREMISE_API_URL` no `.env` e no GitHub Actions.
-
-## Mudanças no on‑premise (você implementa)
-
-Vou deixar documentado com contratos claros; **você implementa no seu backend on‑premise** (não escrevo código on‑premise aqui). São 4 endpoints:
-
-1. `POST /api/pedidos` — cria pedido + preferência no MP, devolve `init_point`.
-2. `POST /api/webhooks/mercadopago` — recebe notificação, valida assinatura, atualiza `status_pgto`.
-3. `GET /api/lojas/:id/pagamento` e `PUT /api/lojas/:id/pagamento` — painel da lojista.
-4. `GET /api/oauth/mercadopago/callback` — se optar por OAuth.
-
-Entrego um `docs/on-premise-api-contract.md` com request/response de cada um, exemplos de payload do MP, como validar o webhook (`x-signature`), e um script `.sql` das migrações.
-
-## Escopo da V1 (o que vou construir agora)
-
-1. Migrações SQL (`supabase/migrations/002_pagamentos.sql`).
-2. Ajustes no `Checkout.tsx` (seleção de método + chamada ao on‑premise + redirect).
-3. Ajustes no `AcompanhamentoPedido.tsx` (bloco de status de pagamento + Realtime na coluna nova).
-4. `src/lib/api.ts` — cliente HTTP tipado pra falar com o on‑premise.
-5. `src/types/db.ts` — atualizar tipos.
-6. `docs/on-premise-api-contract.md` — contrato dos 4 endpoints pro seu backend.
-7. `docs/mercadopago-setup.md` — passo a passo pra lojista conectar a conta dela.
-
-## Fora do escopo da V1 (fica pronto pra depois)
-
-- Adaptadores Stone / Cielo / Pagar.me (arquitetura já suporta, só plugar).
-- OAuth do Mercado Pago (V1 usa access token colado; OAuth em V1.5).
-- Cobrança de fee do white label (só faz sentido no Modelo A / split).
-- Reembolso automático pelo painel.
+**Mudanças concretas em `Checkout.tsx`:**
+- Estados novos: `aguardandoPagamento`, `tentativaPolling`.
+- Após `insert` OK com método online: **não navega**; entra em modo de espera e faz `supabase.from("pedidos").select("init_point,status_pgto").eq("id", id)` a cada 2s.
+- Ao encontrar `init_point`: `window.location.href = init_point`.
+- Timeout 60s: mostra fallback com "Tentar de novo" / "Ver meu pedido".
+- Overlay renderizado no próprio componente (não é rota nova).
 
 ---
 
-## Detalhes técnicos
+## 4) Frontend — Acompanhamento (ajuste pequeno)
 
-### Arquitetura extensível de providers
-```ts
-// on-premise (referência)
-interface PaymentProvider {
-  createPreference(pedido, config): Promise<{ init_point, provider_id }>
-  parseWebhook(req): Promise<{ provider_id, status }>
-}
-const providers = { mercadopago: new MPAdapter(), stone: new StoneAdapter(), ... }
-```
-No dia que quiser Stone, você só implementa `StoneAdapter` e adiciona `'stone'` no enum do banco. Zero mudança no front.
+`src/pages/AcompanhamentoPedido.tsx`: como o pagamento agora acontece antes, o botão "Pagar agora" vira **fallback** para quem fechou a aba do Asaas. Só ajuste de copy:
 
-### Segurança das credenciais
-- `loja_pagamento_config.credentials` guardado como JSONB, mas **criptografado no on‑premise** com uma chave mestre (env `PAYMENT_ENCRYPTION_KEY`). Supabase nunca vê o token em claro.
-- RLS bloqueia leitura por `anon` e `authenticated` — só `service_role` (usado exclusivamente pelo seu on‑premise) lê.
-- Webhook do MP validado via header `x-signature` + `x-request-id` (HMAC SHA256).
+- Quando `status_pgto=pendente` e `init_point` existir → título "Você não concluiu o pagamento" + botão "Retomar pagamento".
 
-### Idempotência
-Webhook do MP pode chegar múltiplas vezes. Toda escrita em `pedidos.status_pgto` checa `pagamento_eventos.provider_event_id` — se já processado, ignora.
-
-### Por que não Lovable Cloud
-Você já tem Supabase próprio e prefere manter. Perfeito — mantemos 100% no seu Supabase + seu on‑premise. Nenhuma edge function na Lovable Cloud é necessária.
+Sem toast/confete extra na chegada (o Asaas já mostra a mensagem de sucesso).
 
 ---
 
-Se aprovar, começo pelas migrações SQL + contrato da API on‑premise (pra você já ir codando o backend em paralelo), e depois plugo o front.
+## 5) Contrato on-premise
+
+Sem mudança de API. Só documentar em `docs/api-onpremise-pagamentos.md` que o poller Asaas deve consumir os novos campos:
+
+- `pedidos.cliente_email` → `customer.email`
+- `pedidos.cliente_cpf`   → `customer.cpfCnpj`
+- `pedidos.cliente_nome`  → `customer.name`
+- `pedidos.cliente_telefone` → `customer.mobilePhone`
+
+---
+
+## Arquivos que serão editados/criados
+
+- `supabase/migrations_003_cliente_pagador.sql` (novo)
+- `src/lib/validators.ts` (novo)
+- `src/types/db.ts` — adiciona `email`, `cpf` em `Cliente`; `cliente_email`, `cliente_cpf` em `Pedido`
+- `src/pages/Checkout.tsx` — campos novos + overlay "aguardando pagamento" + polling
+- `src/pages/AcompanhamentoPedido.tsx` — copy do fallback
+- `docs/api-onpremise-pagamentos.md` — seção "Campos consumidos pelo poller Asaas"

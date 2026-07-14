@@ -12,12 +12,13 @@ import { useCarrinho } from "@/hooks/useCarrinho";
 import { supabase } from "@/lib/supabase";
 import { brl, formatPhone, onlyDigits } from "@/lib/money";
 import { buscarCep, formatCep } from "@/lib/cep";
+import { formatCpf, isValidCpf, isValidEmail } from "@/lib/validators";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ArrowLeft, Loader2, CreditCard, Banknote, QrCode } from "lucide-react";
+import { ArrowLeft, Loader2, CreditCard, Banknote, QrCode, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 // Mapeia método online -> forma_pagamento legada (para preservar compat).
@@ -42,6 +43,8 @@ export default function Checkout() {
 
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [email, setEmail] = useState("");
+  const [cpf, setCpf] = useState("");
   const [modalidade, setModalidade] = useState<Modalidade>("delivery");
   const [cep, setCep] = useState("");
   const [rua, setRua] = useState("");
@@ -53,6 +56,12 @@ export default function Checkout() {
   const [observacao, setObservacao] = useState("");
   const [loadingCep, setLoadingCep] = useState(false);
   const [enviando, setEnviando] = useState(false);
+
+  // Estado da "sala de espera" enquanto o poller gera o init_point no Asaas.
+  const [aguardando, setAguardando] = useState<null | {
+    pedidoId: string;
+    status: "polling" | "timeout" | "erro";
+  }>(null);
 
   // Config de pagamento da loja (view pública). Fallback: só "na_entrega".
   const [pagCfg, setPagCfg] = useState<LojaPagamentoPublico | null>(null);
@@ -115,6 +124,9 @@ export default function Checkout() {
         ? { rua, numero, bairro, complemento, cidade, uf, cep: formatCep(cep) }
         : null;
 
+    const emailTrim = email.trim() || null;
+    const cpfDigits = onlyDigits(cpf) || null;
+
     const { data: existente, error: selErr } = await supabase
       .from("clientes")
       .select("*")
@@ -124,10 +136,16 @@ export default function Checkout() {
     if (selErr) throw selErr;
 
     if (existente) {
+      const ex = existente as Cliente;
       const { data: upd, error: updErr } = await supabase
         .from("clientes")
-        .update({ nome: nome.trim(), endereco: endereco ?? (existente as Cliente).endereco } as never)
-        .eq("id", (existente as Cliente).id)
+        .update({
+          nome: nome.trim(),
+          endereco: endereco ?? ex.endereco,
+          email: emailTrim ?? ex.email,
+          cpf: cpfDigits ?? ex.cpf,
+        } as never)
+        .eq("id", ex.id)
         .select("*")
         .single();
       if (updErr) throw updErr;
@@ -140,6 +158,8 @@ export default function Checkout() {
         loja_id: loja.id,
         nome: nome.trim(),
         telefone: telefoneDigits,
+        email: emailTrim,
+        cpf: cpfDigits,
         endereco,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
@@ -147,6 +167,32 @@ export default function Checkout() {
       .single();
     if (insErr) throw insErr;
     return novo as Cliente;
+  }
+
+  // Faz polling no pedido até que o poller on-premise grave init_point.
+  // Timeout: 60s (~30 tentativas de 2s).
+  async function aguardarInitPoint(pedidoId: string) {
+    const inicio = Date.now();
+    const LIMITE_MS = 60_000;
+    while (Date.now() - inicio < LIMITE_MS) {
+      const { data } = await supabase
+        .from("pedidos")
+        .select("init_point,provider_preference_id,status_pgto")
+        .eq("id", pedidoId)
+        .maybeSingle();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = data as any;
+      if (row?.init_point) {
+        window.location.href = row.init_point as string;
+        return;
+      }
+      if (row?.provider_preference_id) {
+        window.location.href = `https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=${row.provider_preference_id}`;
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    setAguardando({ pedidoId, status: "timeout" });
   }
 
   async function enviar() {
@@ -158,26 +204,36 @@ export default function Checkout() {
       toast.error("Preencha o endereço de entrega");
       return;
     }
+    const isOnline = metodo !== "na_entrega" && metodo !== "dinheiro";
+    if (isOnline) {
+      if (!isValidEmail(email)) {
+        toast.error("Informe um email válido para o pagamento online");
+        return;
+      }
+      if (!isValidCpf(cpf)) {
+        toast.error("Informe um CPF válido para o pagamento online");
+        return;
+      }
+    }
 
     setEnviando(true);
     try {
       const telefoneDigits = onlyDigits(telefone);
       const cliente = await upsertCliente(telefoneDigits);
       const novoPedidoId = crypto.randomUUID();
-      const isOnline = metodo !== "na_entrega" && metodo !== "dinheiro";
 
-      // Fluxo único (POLLING): o front apenas grava o pedido no Supabase.
-      // Para pagamento online, o serviço on-premise (poller) detecta o pedido
-      // com status_pgto='pendente' e sem provider_preference_id, gera a
-      // preferência no gateway (PagBank/Mercado Pago) e grava
-      // provider_preference_id. A tela de acompanhamento faz polling e exibe
-      // o botão "Pagar agora" assim que a preferência estiver pronta.
+      // O front só grava o pedido. O serviço on-premise (poller) detecta pedido
+      // com status_pgto='pendente' e sem init_point, cria a cobrança no Asaas
+      // e grava init_point. Aqui aguardamos esse init_point ANTES de mostrar
+      // qualquer tela de acompanhamento — fluxo "pague primeiro".
       const payload = {
         id: novoPedidoId,
         loja_id: loja.id,
         cliente_id: cliente.id,
         cliente_nome: nome.trim(),
         cliente_telefone: telefoneDigits,
+        cliente_email: email.trim() || null,
+        cliente_cpf: onlyDigits(cpf) || null,
         modalidade,
         rua: modalidade === "delivery" ? rua : null,
         numero: modalidade === "delivery" ? numero : null,
@@ -207,12 +263,14 @@ export default function Checkout() {
       if (error) throw error;
 
       limpar();
-      toast.success(
-        isOnline
-          ? "Pedido registrado! Gerando o pagamento..."
-          : "Pedido enviado com sucesso!",
-      );
-      navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
+
+      if (isOnline) {
+        setAguardando({ pedidoId: novoPedidoId, status: "polling" });
+        aguardarInitPoint(novoPedidoId);
+      } else {
+        toast.success("Pedido enviado com sucesso!");
+        navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
+      }
     } catch (err) {
       console.error(err);
       toast.error("Erro ao enviar pedido. Tente novamente.");
@@ -228,6 +286,61 @@ export default function Checkout() {
     ...metodosOnline,
     ...(mostraNaEntrega ? (["na_entrega"] as MetodoPagamento[]) : []),
   ];
+  const metodoOnlineSelecionado = metodo !== "na_entrega" && metodo !== "dinheiro";
+  const brand = "var(--brand-primary, #6B21A8)";
+
+  if (aguardando) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center py-10 text-center">
+        {aguardando.status === "polling" ? (
+          <>
+            <div
+              className="mb-4 flex h-16 w-16 items-center justify-center rounded-full"
+              style={{ backgroundColor: "color-mix(in oklab, " + brand + " 12%, transparent)" }}
+            >
+              <Loader2 className="h-8 w-8 animate-spin" style={{ color: brand }} />
+            </div>
+            <h2 className="text-xl font-bold">Gerando seu pagamento seguro…</h2>
+            <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+              Estamos preparando sua cobrança no Asaas. Isso costuma levar alguns segundos.
+              Não feche esta página — você será redirecionado automaticamente.
+            </p>
+            <div className="mt-6 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Pagamento processado pelo Asaas
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="text-xl font-bold">O pagamento demorou mais que o esperado</h2>
+            <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+              Seu pedido foi registrado, mas ainda não recebemos o link de pagamento.
+              Você pode tentar novamente ou abrir o pedido para retomar depois.
+            </p>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+              <Button
+                onClick={() => {
+                  setAguardando({ pedidoId: aguardando.pedidoId, status: "polling" });
+                  aguardarInitPoint(aguardando.pedidoId);
+                }}
+                style={{ backgroundColor: brand }}
+              >
+                Tentar de novo
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  navigate(`/${loja.slug}/pedido/${aguardando.pedidoId}`, { replace: true })
+                }
+              >
+                Ver meu pedido
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="pb-10">
@@ -256,6 +369,41 @@ export default function Checkout() {
               placeholder="(00) 00000-0000"
               inputMode="tel"
             />
+          </div>
+          <div>
+            <Label htmlFor="email">
+              Email {metodoOnlineSelecionado && <span className="text-red-500">*</span>}
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="voce@exemplo.com"
+              inputMode="email"
+            />
+            {metodoOnlineSelecionado && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Necessário para receber o comprovante do pagamento.
+              </p>
+            )}
+          </div>
+          <div>
+            <Label htmlFor="cpf">
+              CPF {metodoOnlineSelecionado && <span className="text-red-500">*</span>}
+            </Label>
+            <Input
+              id="cpf"
+              value={cpf}
+              onChange={(e) => setCpf(formatCpf(e.target.value))}
+              placeholder="000.000.000-00"
+              inputMode="numeric"
+            />
+            {metodoOnlineSelecionado && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Exigido pelo Asaas para gerar o pagamento.
+              </p>
+            )}
           </div>
         </section>
 
@@ -371,7 +519,7 @@ export default function Checkout() {
                       <p className="font-medium">{label}</p>
                       <p className="text-xs text-muted-foreground">
                         {online
-                          ? "Pagamento online, seguro pelo Mercado Pago"
+                          ? "Pagamento online seguro (Asaas)"
                           : "Pague ao receber o pedido"}
                       </p>
                     </div>

@@ -140,6 +140,8 @@ export interface Cliente {
   loja_id: string;
   nome: string;
   telefone: string;
+  email: string | null;
+  cpf: string | null;
   endereco: EnderecoCliente | null;
   created_at: string;
 }
@@ -162,6 +164,8 @@ export interface Pedido {
   numero_pedido: number;
   cliente_nome: string;
   cliente_telefone: string;
+  cliente_email: string | null;
+  cliente_cpf: string | null;
   modalidade: Modalidade;
   rua: string | null;
   numero: string | null;

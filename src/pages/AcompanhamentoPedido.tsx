@@ -192,7 +192,10 @@ export default function AcompanhamentoPedido() {
             <p className="text-sm text-muted-foreground">Processando pagamento...</p>
           ) : (
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Pagamento pendente.</p>
+              <p className="font-medium">Você não concluiu o pagamento.</p>
+              <p className="text-sm text-muted-foreground">
+                Retome quando quiser — seu pedido fica reservado.
+              </p>
               {(pedido.init_point || pedido.provider_preference_id) && (
                 <a
                   href={
@@ -204,7 +207,7 @@ export default function AcompanhamentoPedido() {
                   className="inline-block rounded-md px-4 py-2 text-sm font-medium text-white"
                   style={{ backgroundColor: brand }}
                 >
-                  Pagar agora
+                  Retomar pagamento
                 </a>
               )}
             </div>

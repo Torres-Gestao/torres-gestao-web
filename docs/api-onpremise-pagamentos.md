@@ -91,3 +91,32 @@ Ele deve:
   (AES-GCM com chave em cofre do on-premise). Nunca retornar credenciais na API.
 - O front só lê `loja_pagamento_publico` (view sem credenciais).
 - CORS: liberar apenas o domínio do storefront (github.io ou custom domain).
+
+---
+
+## Campos consumidos pelo poller Asaas (v2)
+
+A partir da migration 003, o front grava dados do pagador diretamente em `pedidos`.
+O poller on-premise deve mapear:
+
+| Coluna no `pedidos`     | Campo Asaas (customer) |
+|-------------------------|------------------------|
+| `cliente_nome`          | `name`                 |
+| `cliente_telefone`      | `mobilePhone`          |
+| `cliente_email`         | `email`                |
+| `cliente_cpf`           | `cpfCnpj`              |
+
+Também presentes em `clientes` (para reuso entre pedidos):
+- `clientes.email`
+- `clientes.cpf`
+
+### Fluxo "pague antes"
+
+O front agora **aguarda** o `init_point` ser gravado antes de sair do checkout
+(polling a cada 2s, timeout 60s). Portanto o poller deve:
+
+1. Detectar pedidos com `status_pgto='pendente'` e `init_point IS NULL`.
+2. Criar a cobrança no Asaas.
+3. Gravar `pedidos.init_point` (URL de pagamento) o mais rápido possível — idealmente < 10s.
+
+Se o `init_point` demorar mais que 60s, o cliente vê uma tela de fallback com opção de tentar de novo ou abrir a tela de acompanhamento.
