@@ -519,7 +519,7 @@ export default function Checkout() {
                       <p className="font-medium">{label}</p>
                       <p className="text-xs text-muted-foreground">
                         {online
-                          ? "Pagamento online, seguro pelo Mercado Pago"
+                          ? "Pagamento online seguro (Asaas)"
                           : "Pague ao receber o pedido"}
                       </p>
                     </div>
