@@ -43,6 +43,8 @@ export default function Checkout() {
 
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [email, setEmail] = useState("");
+  const [cpf, setCpf] = useState("");
   const [modalidade, setModalidade] = useState<Modalidade>("delivery");
   const [cep, setCep] = useState("");
   const [rua, setRua] = useState("");
@@ -54,6 +56,12 @@ export default function Checkout() {
   const [observacao, setObservacao] = useState("");
   const [loadingCep, setLoadingCep] = useState(false);
   const [enviando, setEnviando] = useState(false);
+
+  // Estado da "sala de espera" enquanto o poller gera o init_point no Asaas.
+  const [aguardando, setAguardando] = useState<null | {
+    pedidoId: string;
+    status: "polling" | "timeout" | "erro";
+  }>(null);
 
   // Config de pagamento da loja (view pública). Fallback: só "na_entrega".
   const [pagCfg, setPagCfg] = useState<LojaPagamentoPublico | null>(null);
