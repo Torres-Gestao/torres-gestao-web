@@ -175,13 +175,12 @@ export default function Checkout() {
     const inicio = Date.now();
     const LIMITE_MS = 60_000;
     while (Date.now() - inicio < LIMITE_MS) {
-      const { data } = await supabase
-        .from("pedidos")
-        .select("init_point,provider_preference_id,status_pgto")
-        .eq("id", pedidoId)
-        .maybeSingle();
+      // Leitura via RPC get_pedido: o anon NÃO tem SELECT direto em `pedidos`
+      // (o schema revoga SELECT e expõe apenas a função). Select direto = 401.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const row = data as any;
+      const { data } = await (supabase.rpc as any)("get_pedido", { p_id: pedidoId });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = ((data as any[] | null) ?? [])[0];
       if (row?.init_point) {
         window.location.href = row.init_point as string;
         return;
