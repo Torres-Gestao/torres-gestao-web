@@ -315,6 +315,41 @@ export default function Checkout() {
               inputMode="tel"
             />
           </div>
+          <div>
+            <Label htmlFor="email">
+              Email {metodoOnlineSelecionado && <span className="text-red-500">*</span>}
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="voce@exemplo.com"
+              inputMode="email"
+            />
+            {metodoOnlineSelecionado && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Necessário para receber o comprovante do pagamento.
+              </p>
+            )}
+          </div>
+          <div>
+            <Label htmlFor="cpf">
+              CPF {metodoOnlineSelecionado && <span className="text-red-500">*</span>}
+            </Label>
+            <Input
+              id="cpf"
+              value={cpf}
+              onChange={(e) => setCpf(formatCpf(e.target.value))}
+              placeholder="000.000.000-00"
+              inputMode="numeric"
+            />
+            {metodoOnlineSelecionado && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Exigido pelo Asaas para gerar o pagamento.
+              </p>
+            )}
+          </div>
         </section>
 
         <section className="space-y-3 rounded-xl border bg-card p-4">
