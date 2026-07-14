@@ -92,6 +92,63 @@ export default function Checkout() {
     };
   }, [loja.id]);
 
+  const brand = "var(--brand-primary, #6B21A8)";
+
+  // Tela de espera do pagamento (precisa vir ANTES da checagem de carrinho
+  // vazio, pois enviar() chama limpar() e esvaziaria o carrinho).
+  if (aguardando) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center py-10 text-center">
+        {aguardando.status === "polling" ? (
+          <>
+            <div
+              className="mb-4 flex h-16 w-16 items-center justify-center rounded-full"
+              style={{ backgroundColor: "color-mix(in oklab, " + brand + " 12%, transparent)" }}
+            >
+              <Loader2 className="h-8 w-8 animate-spin" style={{ color: brand }} />
+            </div>
+            <h2 className="text-xl font-bold">Gerando seu pagamento seguro…</h2>
+            <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+              Estamos preparando sua cobrança no Asaas. Isso costuma levar alguns segundos.
+              Não feche esta página — você será redirecionado automaticamente.
+            </p>
+            <div className="mt-6 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Pagamento processado pelo Asaas
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="text-xl font-bold">O pagamento demorou mais que o esperado</h2>
+            <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+              Seu pedido foi registrado, mas ainda não recebemos o link de pagamento.
+              Você pode tentar novamente ou abrir o pedido para retomar depois.
+            </p>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+              <Button
+                onClick={() => {
+                  setAguardando({ pedidoId: aguardando.pedidoId, status: "polling" });
+                  aguardarInitPoint(aguardando.pedidoId);
+                }}
+                style={{ backgroundColor: brand }}
+              >
+                Tentar de novo
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  navigate(`/${loja.slug}/pedido/${aguardando.pedidoId}`, { replace: true })
+                }
+              >
+                Ver meu pedido
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   if (itens.length === 0) {
     return (
       <div className="py-16 text-center">
@@ -286,60 +343,6 @@ export default function Checkout() {
     ...(mostraNaEntrega ? (["na_entrega"] as MetodoPagamento[]) : []),
   ];
   const metodoOnlineSelecionado = metodo !== "na_entrega" && metodo !== "dinheiro";
-  const brand = "var(--brand-primary, #6B21A8)";
-
-  if (aguardando) {
-    return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center py-10 text-center">
-        {aguardando.status === "polling" ? (
-          <>
-            <div
-              className="mb-4 flex h-16 w-16 items-center justify-center rounded-full"
-              style={{ backgroundColor: "color-mix(in oklab, " + brand + " 12%, transparent)" }}
-            >
-              <Loader2 className="h-8 w-8 animate-spin" style={{ color: brand }} />
-            </div>
-            <h2 className="text-xl font-bold">Gerando seu pagamento seguro…</h2>
-            <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-              Estamos preparando sua cobrança no Asaas. Isso costuma levar alguns segundos.
-              Não feche esta página — você será redirecionado automaticamente.
-            </p>
-            <div className="mt-6 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Pagamento processado pelo Asaas
-            </div>
-          </>
-        ) : (
-          <>
-            <h2 className="text-xl font-bold">O pagamento demorou mais que o esperado</h2>
-            <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-              Seu pedido foi registrado, mas ainda não recebemos o link de pagamento.
-              Você pode tentar novamente ou abrir o pedido para retomar depois.
-            </p>
-            <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-              <Button
-                onClick={() => {
-                  setAguardando({ pedidoId: aguardando.pedidoId, status: "polling" });
-                  aguardarInitPoint(aguardando.pedidoId);
-                }}
-                style={{ backgroundColor: brand }}
-              >
-                Tentar de novo
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  navigate(`/${loja.slug}/pedido/${aguardando.pedidoId}`, { replace: true })
-                }
-              >
-                Ver meu pedido
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="pb-10">
