@@ -164,6 +164,8 @@ export interface Pedido {
   numero_pedido: number;
   cliente_nome: string;
   cliente_telefone: string;
+  cliente_email: string | null;
+  cliente_cpf: string | null;
   modalidade: Modalidade;
   rua: string | null;
   numero: string | null;
