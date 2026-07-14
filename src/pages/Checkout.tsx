@@ -124,6 +124,9 @@ export default function Checkout() {
         ? { rua, numero, bairro, complemento, cidade, uf, cep: formatCep(cep) }
         : null;
 
+    const emailTrim = email.trim() || null;
+    const cpfDigits = onlyDigits(cpf) || null;
+
     const { data: existente, error: selErr } = await supabase
       .from("clientes")
       .select("*")
@@ -133,10 +136,16 @@ export default function Checkout() {
     if (selErr) throw selErr;
 
     if (existente) {
+      const ex = existente as Cliente;
       const { data: upd, error: updErr } = await supabase
         .from("clientes")
-        .update({ nome: nome.trim(), endereco: endereco ?? (existente as Cliente).endereco } as never)
-        .eq("id", (existente as Cliente).id)
+        .update({
+          nome: nome.trim(),
+          endereco: endereco ?? ex.endereco,
+          email: emailTrim ?? ex.email,
+          cpf: cpfDigits ?? ex.cpf,
+        } as never)
+        .eq("id", ex.id)
         .select("*")
         .single();
       if (updErr) throw updErr;
@@ -149,6 +158,8 @@ export default function Checkout() {
         loja_id: loja.id,
         nome: nome.trim(),
         telefone: telefoneDigits,
+        email: emailTrim,
+        cpf: cpfDigits,
         endereco,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
@@ -156,6 +167,32 @@ export default function Checkout() {
       .single();
     if (insErr) throw insErr;
     return novo as Cliente;
+  }
+
+  // Faz polling no pedido até que o poller on-premise grave init_point.
+  // Timeout: 60s (~30 tentativas de 2s).
+  async function aguardarInitPoint(pedidoId: string) {
+    const inicio = Date.now();
+    const LIMITE_MS = 60_000;
+    while (Date.now() - inicio < LIMITE_MS) {
+      const { data } = await supabase
+        .from("pedidos")
+        .select("init_point,provider_preference_id,status_pgto")
+        .eq("id", pedidoId)
+        .maybeSingle();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = data as any;
+      if (row?.init_point) {
+        window.location.href = row.init_point as string;
+        return;
+      }
+      if (row?.provider_preference_id) {
+        window.location.href = `https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=${row.provider_preference_id}`;
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    setAguardando({ pedidoId, status: "timeout" });
   }
 
   async function enviar() {
@@ -167,26 +204,36 @@ export default function Checkout() {
       toast.error("Preencha o endereço de entrega");
       return;
     }
+    const isOnline = metodo !== "na_entrega" && metodo !== "dinheiro";
+    if (isOnline) {
+      if (!isValidEmail(email)) {
+        toast.error("Informe um email válido para o pagamento online");
+        return;
+      }
+      if (!isValidCpf(cpf)) {
+        toast.error("Informe um CPF válido para o pagamento online");
+        return;
+      }
+    }
 
     setEnviando(true);
     try {
       const telefoneDigits = onlyDigits(telefone);
       const cliente = await upsertCliente(telefoneDigits);
       const novoPedidoId = crypto.randomUUID();
-      const isOnline = metodo !== "na_entrega" && metodo !== "dinheiro";
 
-      // Fluxo único (POLLING): o front apenas grava o pedido no Supabase.
-      // Para pagamento online, o serviço on-premise (poller) detecta o pedido
-      // com status_pgto='pendente' e sem provider_preference_id, gera a
-      // preferência no gateway (PagBank/Mercado Pago) e grava
-      // provider_preference_id. A tela de acompanhamento faz polling e exibe
-      // o botão "Pagar agora" assim que a preferência estiver pronta.
+      // O front só grava o pedido. O serviço on-premise (poller) detecta pedido
+      // com status_pgto='pendente' e sem init_point, cria a cobrança no Asaas
+      // e grava init_point. Aqui aguardamos esse init_point ANTES de mostrar
+      // qualquer tela de acompanhamento — fluxo "pague primeiro".
       const payload = {
         id: novoPedidoId,
         loja_id: loja.id,
         cliente_id: cliente.id,
         cliente_nome: nome.trim(),
         cliente_telefone: telefoneDigits,
+        cliente_email: email.trim() || null,
+        cliente_cpf: onlyDigits(cpf) || null,
         modalidade,
         rua: modalidade === "delivery" ? rua : null,
         numero: modalidade === "delivery" ? numero : null,
@@ -216,12 +263,14 @@ export default function Checkout() {
       if (error) throw error;
 
       limpar();
-      toast.success(
-        isOnline
-          ? "Pedido registrado! Gerando o pagamento..."
-          : "Pedido enviado com sucesso!",
-      );
-      navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
+
+      if (isOnline) {
+        setAguardando({ pedidoId: novoPedidoId, status: "polling" });
+        aguardarInitPoint(novoPedidoId);
+      } else {
+        toast.success("Pedido enviado com sucesso!");
+        navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
+      }
     } catch (err) {
       console.error(err);
       toast.error("Erro ao enviar pedido. Tente novamente.");
