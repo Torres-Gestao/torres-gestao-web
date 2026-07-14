@@ -12,12 +12,13 @@ import { useCarrinho } from "@/hooks/useCarrinho";
 import { supabase } from "@/lib/supabase";
 import { brl, formatPhone, onlyDigits } from "@/lib/money";
 import { buscarCep, formatCep } from "@/lib/cep";
+import { formatCpf, isValidCpf, isValidEmail } from "@/lib/validators";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ArrowLeft, Loader2, CreditCard, Banknote, QrCode } from "lucide-react";
+import { ArrowLeft, Loader2, CreditCard, Banknote, QrCode, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 // Mapeia método online -> forma_pagamento legada (para preservar compat).
