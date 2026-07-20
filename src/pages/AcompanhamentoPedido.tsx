@@ -242,9 +242,21 @@ export default function AcompanhamentoPedido() {
             </li>
           ))}
         </ul>
-        <div className="mt-3 flex justify-between border-t pt-3 font-bold">
-          <span>Total</span>
-          <span>{brl(pedido.total_general)}</span>
+        <div className="mt-3 space-y-1 border-t pt-3 text-sm">
+          <div className="flex justify-between text-muted-foreground">
+            <span>Subtotal</span>
+            <span>{brl(pedido.total_produtos)}</span>
+          </div>
+          {pedido.taxa_entrega != null && Number(pedido.taxa_entrega) > 0 && (
+            <div className="flex justify-between text-muted-foreground">
+              <span>Frete</span>
+              <span>{brl(Number(pedido.taxa_entrega))}</span>
+            </div>
+          )}
+          <div className="flex justify-between pt-1 text-base font-bold text-foreground">
+            <span>Total</span>
+            <span>{brl(pedido.total_general)}</span>
+          </div>
         </div>
       </div>
 
