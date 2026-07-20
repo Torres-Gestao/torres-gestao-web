@@ -120,3 +120,27 @@ O front agora **aguarda** o `init_point` ser gravado antes de sair do checkout
 3. Gravar `pedidos.init_point` (URL de pagamento) o mais rápido possível — idealmente < 10s.
 
 Se o `init_point` demorar mais que 60s, o cliente vê uma tela de fallback com opção de tentar de novo ou abrir a tela de acompanhamento.
+
+---
+
+## Frete (migration 004) — evitar cobrança duplicada
+
+A partir da v2 do checkout, o **front** grava:
+
+- `pedidos.taxa_entrega` = valor da faixa calculada por distância (Mapbox + haversine).
+- `pedidos.total_general` = `total_produtos + taxa_entrega`.
+
+Ou seja, **o total já inclui o frete**. O poller Asaas deve usar:
+
+```
+valor_cobrança = pedido.total_general
+```
+
+**NÃO** faça `total_general + taxa_entrega` ao montar a cobrança — isso cobraria o frete em dobro. O campo `taxa_entrega` fica apenas como informação (para o comprovante/nota).
+
+### Checklist antes de ligar `lojas.frete_ativo = true`
+
+1. Loja tem `latitude`, `longitude` e `mapbox_public_token` preenchidos.
+2. Existe pelo menos uma linha em `loja_frete_faixas` para a loja.
+3. Poller Asaas revisado: usa `total_general` diretamente, sem re-somar `taxa_entrega`.
+4. Token público Mapbox restrito por URL allowlist (domínio do storefront).

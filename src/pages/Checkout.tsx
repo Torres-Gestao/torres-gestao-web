@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext, useNavigate, Link } from "react-router-dom";
 import type {
   Cliente,
@@ -13,15 +13,26 @@ import { supabase } from "@/lib/supabase";
 import { brl, formatPhone, onlyDigits } from "@/lib/money";
 import { buscarCep, formatCep } from "@/lib/cep";
 import { formatCpf, isValidCpf, isValidEmail } from "@/lib/validators";
+import { useFreteFaixas, type CalculoFrete } from "@/hooks/useFreteFaixas";
+import { geocodeEndereco, haversineKm, type LatLng } from "@/lib/mapbox";
+import MapaConfirmacao from "@/components/loja/MapaConfirmacao";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ArrowLeft, Loader2, CreditCard, Banknote, QrCode, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  CreditCard,
+  Banknote,
+  QrCode,
+  ShieldCheck,
+  MapPin,
+  AlertCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 
-// Mapeia método online -> forma_pagamento legada (para preservar compat).
 function metodoToFormaLegada(m: MetodoPagamento): FormaPagamento {
   if (m === "pix") return "pix";
   if (m === "cartao_credito" || m === "cartao_debito") return "cartao_credito";
@@ -35,6 +46,13 @@ const METODO_LABELS: Record<MetodoPagamento, { label: string; icon: typeof QrCod
   dinheiro: { label: "Dinheiro", icon: Banknote },
   na_entrega: { label: "Pagar na entrega/retirada", icon: Banknote },
 };
+
+type FreteState =
+  | { kind: "idle" }
+  | { kind: "calculando" }
+  | { kind: "ok"; valor: number; km: number; coord: LatLng }
+  | { kind: "fora_area"; km: number }
+  | { kind: "precisa_confirmar"; coord: LatLng };
 
 export default function Checkout() {
   const { loja } = useOutletContext<{ loja: Loja }>();
@@ -56,17 +74,27 @@ export default function Checkout() {
   const [observacao, setObservacao] = useState("");
   const [loadingCep, setLoadingCep] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [mostrarMapa, setMostrarMapa] = useState(false);
 
-  // Estado da "sala de espera" enquanto o poller gera o init_point no Asaas.
   const [aguardando, setAguardando] = useState<null | {
     pedidoId: string;
     status: "polling" | "timeout" | "erro";
   }>(null);
 
-  // Config de pagamento da loja (view pública). Fallback: só "na_entrega".
   const [pagCfg, setPagCfg] = useState<LojaPagamentoPublico | null>(null);
   const [cfgLoading, setCfgLoading] = useState(true);
   const [metodo, setMetodo] = useState<MetodoPagamento>("na_entrega");
+
+  // Frete
+  const { faixas, calcularFrete, maiorFaixa } = useFreteFaixas(loja.id);
+  const freteHabilitado =
+    !!loja.frete_ativo &&
+    !!loja.mapbox_public_token &&
+    loja.latitude != null &&
+    loja.longitude != null &&
+    faixas.length > 0;
+  const [freteState, setFreteState] = useState<FreteState>({ kind: "idle" });
+  const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     let ativo = true;
@@ -79,7 +107,6 @@ export default function Checkout() {
       if (!ativo) return;
       const cfg = (data as LojaPagamentoPublico | null) ?? null;
       setPagCfg(cfg);
-      // Escolha padrão: primeiro método online se aceita; senão na entrega.
       if (cfg?.metodos_aceitos?.length) {
         setMetodo(cfg.metodos_aceitos[0]);
       } else {
@@ -94,8 +121,70 @@ export default function Checkout() {
 
   const brand = "var(--brand-primary, #6B21A8)";
 
-  // Tela de espera do pagamento (precisa vir ANTES da checagem de carrinho
-  // vazio, pois enviar() chama limpar() e esvaziaria o carrinho).
+  // ---------- Cálculo do frete ----------
+  const lojaCoord = useMemo<LatLng | null>(() => {
+    if (loja.latitude == null || loja.longitude == null) return null;
+    return { lat: Number(loja.latitude), lng: Number(loja.longitude) };
+  }, [loja.latitude, loja.longitude]);
+
+  function aplicarCalculo(coord: LatLng): FreteState {
+    if (!lojaCoord) return { kind: "idle" };
+    const km = haversineKm(lojaCoord, coord);
+    const r: CalculoFrete = calcularFrete(km);
+    if (r.status === "ok") {
+      return { kind: "ok", valor: r.valor, km: r.km, coord };
+    }
+    return { kind: "fora_area", km: r.km };
+  }
+
+  async function recalcular() {
+    if (!freteHabilitado || modalidade !== "delivery") {
+      setFreteState({ kind: "idle" });
+      return;
+    }
+    if (!rua || !numero || !cidade || !uf) {
+      setFreteState({ kind: "idle" });
+      return;
+    }
+    setFreteState({ kind: "calculando" });
+    const coord = await geocodeEndereco(loja.mapbox_public_token!, {
+      cep,
+      rua,
+      numero,
+      cidade,
+      uf,
+    });
+    if (!coord) {
+      // Falha de geocoding ≠ fora de área.
+      // Cai no modo manual: pedir pra confirmar no mapa, centrando na loja.
+      const centro = lojaCoord ?? { lat: -14.235, lng: -51.9253 };
+      setFreteState({ kind: "precisa_confirmar", coord: centro });
+      setMostrarMapa(true);
+      return;
+    }
+    setFreteState(aplicarCalculo(coord));
+  }
+
+  // Debounce: recalcula quando os campos essenciais mudam.
+  useEffect(() => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
+      recalcular();
+    }, 500);
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rua, numero, cidade, uf, cep, modalidade, freteHabilitado]);
+
+  function handlePinMove(lat: number, lng: number) {
+    const coord = { lat, lng };
+    setFreteState({ kind: "calculando" });
+    // Cálculo é síncrono após termos coord confirmado.
+    setTimeout(() => setFreteState(aplicarCalculo(coord)), 100);
+  }
+
+  // ---------- Tela de espera do pagamento ----------
   if (aguardando) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center py-10 text-center">
@@ -176,9 +265,23 @@ export default function Checkout() {
   }
 
   async function upsertCliente(telefoneDigits: string): Promise<Cliente> {
+    const coord =
+      freteState.kind === "ok" || freteState.kind === "precisa_confirmar"
+        ? (freteState as { coord: LatLng }).coord
+        : null;
     const endereco =
       modalidade === "delivery"
-        ? { rua, numero, bairro, complemento, cidade, uf, cep: formatCep(cep) }
+        ? {
+            rua,
+            numero,
+            bairro,
+            complemento,
+            cidade,
+            uf,
+            cep: formatCep(cep),
+            latitude: coord?.lat ?? null,
+            longitude: coord?.lng ?? null,
+          }
         : null;
 
     const emailTrim = email.trim() || null;
@@ -226,14 +329,10 @@ export default function Checkout() {
     return novo as Cliente;
   }
 
-  // Faz polling no pedido até que o poller on-premise grave init_point.
-  // Timeout: 60s (~30 tentativas de 2s).
   async function aguardarInitPoint(pedidoId: string) {
     const inicio = Date.now();
     const LIMITE_MS = 60_000;
     while (Date.now() - inicio < LIMITE_MS) {
-      // Leitura via RPC get_pedido: o anon NÃO tem SELECT direto em `pedidos`
-      // (o schema revoga SELECT e expõe apenas a função). Select direto = 401.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data } = await (supabase.rpc as any)("get_pedido", { p_id: pedidoId });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -251,6 +350,19 @@ export default function Checkout() {
     setAguardando({ pedidoId, status: "timeout" });
   }
 
+  const taxaEntrega =
+    modalidade === "delivery" && freteState.kind === "ok" ? freteState.valor : 0;
+  const total = subtotal + taxaEntrega;
+
+  // Regras de bloqueio do botão Finalizar
+  const bloqueadoPorFrete =
+    modalidade === "delivery" &&
+    freteHabilitado &&
+    (freteState.kind === "calculando" ||
+      freteState.kind === "fora_area" ||
+      freteState.kind === "precisa_confirmar" ||
+      freteState.kind === "idle");
+
   async function enviar() {
     if (!nome.trim() || !telefone.trim()) {
       toast.error("Preencha seu nome e telefone");
@@ -258,6 +370,10 @@ export default function Checkout() {
     }
     if (modalidade === "delivery" && (!rua || !numero || !bairro)) {
       toast.error("Preencha o endereço de entrega");
+      return;
+    }
+    if (bloqueadoPorFrete) {
+      toast.error("Confirme o cálculo do frete antes de finalizar");
       return;
     }
     const isOnline = metodo !== "na_entrega" && metodo !== "dinheiro";
@@ -278,10 +394,8 @@ export default function Checkout() {
       const cliente = await upsertCliente(telefoneDigits);
       const novoPedidoId = crypto.randomUUID();
 
-      // O front só grava o pedido. O serviço on-premise (poller) detecta pedido
-      // com status_pgto='pendente' e sem init_point, cria a cobrança no Asaas
-      // e grava init_point. Aqui aguardamos esse init_point ANTES de mostrar
-      // qualquer tela de acompanhamento — fluxo "pague primeiro".
+      // total_general já inclui o frete — on-premise NÃO deve somar taxa_entrega
+      // novamente ao criar a cobrança no Asaas (ver docs/api-onpremise-pagamentos.md).
       const payload = {
         id: novoPedidoId,
         loja_id: loja.id,
@@ -300,8 +414,8 @@ export default function Checkout() {
         cep: modalidade === "delivery" ? formatCep(cep) : null,
         itens,
         total_produtos: subtotal,
-        taxa_entrega: 0,
-        total_general: subtotal,
+        taxa_entrega: taxaEntrega,
+        total_general: total,
         forma_pagamento: metodoToFormaLegada(metodo),
         metodo_pgto: metodo,
         status_pgto: isOnline ? ("pendente" as const) : ("nao_aplicavel" as const),
@@ -319,8 +433,6 @@ export default function Checkout() {
       if (error) throw error;
 
       if (isOnline) {
-        // Seta a tela de espera ANTES de limpar o carrinho, para nunca cair
-        // na tela "Adicione itens" (o limpar esvazia os itens).
         setAguardando({ pedidoId: novoPedidoId, status: "polling" });
         limpar();
         aguardarInitPoint(novoPedidoId);
@@ -337,7 +449,6 @@ export default function Checkout() {
     }
   }
 
-  // Monta lista de métodos exibidos.
   const metodosOnline = pagCfg?.ativo ? pagCfg.metodos_aceitos : [];
   const mostraNaEntrega = !pagCfg || pagCfg.aceita_na_entrega;
   const metodosDisponiveis: MetodoPagamento[] = [
@@ -345,6 +456,11 @@ export default function Checkout() {
     ...(mostraNaEntrega ? (["na_entrega"] as MetodoPagamento[]) : []),
   ];
   const metodoOnlineSelecionado = metodo !== "na_entrega" && metodo !== "dinheiro";
+
+  const coordAtual: LatLng | null =
+    freteState.kind === "ok" || freteState.kind === "precisa_confirmar"
+      ? (freteState as { coord: LatLng }).coord
+      : null;
 
   return (
     <div className="pb-10">
@@ -487,6 +603,80 @@ export default function Checkout() {
                   </div>
                 </div>
               </div>
+
+              {/* Feedback do frete */}
+              {freteHabilitado && (
+                <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                  {freteState.kind === "idle" && (
+                    <p className="text-muted-foreground">
+                      Preencha o endereço para calcular o frete.
+                    </p>
+                  )}
+                  {freteState.kind === "calculando" && (
+                    <p className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Calculando frete…
+                    </p>
+                  )}
+                  {freteState.kind === "ok" && (
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" style={{ color: brand }} />
+                        Frete ({freteState.km.toFixed(1)} km)
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold">{brl(freteState.valor)}</span>
+                        <button
+                          type="button"
+                          onClick={() => setMostrarMapa((v) => !v)}
+                          className="text-xs underline text-muted-foreground"
+                        >
+                          {mostrarMapa ? "Ocultar mapa" : "Ajustar no mapa"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {freteState.kind === "fora_area" && (
+                    <div className="flex items-start gap-2 text-red-700">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-semibold">Endereço fora da área de entrega</p>
+                        <p className="text-xs">
+                          Distância calculada: {freteState.km.toFixed(1)} km
+                          {maiorFaixa
+                            ? ` — a loja entrega até ${Number(maiorFaixa.km_max).toFixed(1)} km.`
+                            : "."}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {freteState.kind === "precisa_confirmar" && (
+                    <div className="flex items-start gap-2 text-amber-800">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-semibold">Não conseguimos localizar seu endereço</p>
+                        <p className="text-xs">
+                          Arraste o pin no mapa abaixo até o local exato da entrega.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Mapa */}
+              {freteHabilitado &&
+                loja.mapbox_public_token &&
+                coordAtual &&
+                (mostrarMapa || freteState.kind === "precisa_confirmar") && (
+                  <MapaConfirmacao
+                    token={loja.mapbox_public_token}
+                    lat={coordAtual.lat}
+                    lng={coordAtual.lng}
+                    onChange={handlePinMove}
+                    brand={loja.cor_primaria ?? "#6B21A8"}
+                  />
+                )}
             </div>
           )}
         </section>
@@ -550,21 +740,33 @@ export default function Checkout() {
             <span className="text-muted-foreground">Subtotal</span>
             <span>{brl(subtotal)}</span>
           </div>
+          {taxaEntrega > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Frete</span>
+              <span>{brl(taxaEntrega)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-base font-bold">
             <span>Total</span>
-            <span>{brl(subtotal)}</span>
+            <span>{brl(total)}</span>
           </div>
         </section>
 
         <Button
           className="h-12 w-full text-base"
           style={{ backgroundColor: "var(--brand-primary, #6B21A8)" }}
-          disabled={enviando || metodosDisponiveis.length === 0}
+          disabled={enviando || metodosDisponiveis.length === 0 || bloqueadoPorFrete}
           onClick={enviar}
         >
           {enviando ? (
             <Loader2 className="h-5 w-5 animate-spin" />
-          ) : metodo !== "na_entrega" && metodo !== "dinheiro" ? (
+          ) : freteState.kind === "calculando" ? (
+            "Calculando frete…"
+          ) : freteState.kind === "precisa_confirmar" ? (
+            "Confirme o endereço no mapa"
+          ) : freteState.kind === "fora_area" ? (
+            "Fora da área de entrega"
+          ) : metodoOnlineSelecionado ? (
             "Ir para o pagamento"
           ) : (
             "Finalizar Pedido"

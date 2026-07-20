@@ -10,6 +10,22 @@ export interface Loja {
   telefone_contato: string | null;
   loja_aberta: boolean | null;
   created_at: string | null;
+  // Frete (migration 004)
+  endereco: EnderecoCliente | null;
+  latitude: number | null;
+  longitude: number | null;
+  mapbox_public_token: string | null;
+  frete_ativo: boolean | null;
+}
+
+export interface FreteFaixa {
+  id: string;
+  loja_id: string;
+  km_min: number;
+  km_max: number;
+  valor: number;
+  ordem: number;
+  created_at: string;
 }
 
 export interface Categoria {
@@ -133,6 +149,8 @@ export interface EnderecoCliente {
   cidade?: string | null;
   uf?: string | null;
   cep?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface Cliente {
@@ -206,6 +224,7 @@ export interface Database {
       produtos: { Row: Produto; Insert: Partial<Produto>; Update: Partial<Produto> };
       perguntas: { Row: Pergunta; Insert: Partial<Pergunta>; Update: Partial<Pergunta> };
       clientes: { Row: Cliente; Insert: Partial<Cliente>; Update: Partial<Cliente> };
+      loja_frete_faixas: { Row: FreteFaixa; Insert: Partial<FreteFaixa>; Update: Partial<FreteFaixa> };
       pedidos: {
         Row: Pedido;
         Insert: Omit<Partial<Pedido>, "itens"> & { itens: PedidoItem[] };

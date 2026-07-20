@@ -1,111 +1,124 @@
-## Objetivo
+# Plano — Frete automático com Mapbox (v2)
 
-1. Coletar **CPF e email** do cliente no checkout (obrigatórios apenas quando o pagamento for online — Asaas exige).
-2. Corrigir o fluxo: quando o método for **online**, o cliente **paga antes** de ir para a tela de acompanhamento.
+## Arquitetura
 
----
+Sem chamar o on-premise no fluxo do cliente. Config no Supabase; cálculo e mapa no browser.
 
-## 1) Banco (SQL — rodar no Supabase)
-
-```sql
-alter table public.clientes
-  add column if not exists email text,
-  add column if not exists cpf  text;
-
-alter table public.pedidos
-  add column if not exists cliente_email text,
-  add column if not exists cliente_cpf   text;
-```
-
-Arquivo: `supabase/migrations_003_cliente_pagador.sql`. Sem mudança de RLS.
-
----
-
-## 2) Frontend — Checkout: novos campos
-
-Em `src/pages/Checkout.tsx`, na seção "Seus dados":
-
-- Novo campo **Email** (input `type="email"`).
-- Novo campo **CPF** com máscara `000.000.000-00`.
-
-**Regra:** só obrigatórios quando `metodo ∈ {pix, cartao_credito, cartao_debito}`. Para `na_entrega`/`dinheiro`: opcionais (se preenchidos, salvamos mesmo assim).
-
-**Validação** (novo arquivo `src/lib/validators.ts`):
-- `formatCpf(v)` — máscara.
-- `isValidCpf(v)` — 11 dígitos + dígito verificador.
-- `isValidEmail(v)` — regex simples.
-
-**Persistência:**
-- `upsertCliente` grava `email` e `cpf` (atualiza sempre que vier preenchido).
-- Payload do `insert` em `pedidos` inclui `cliente_email` e `cliente_cpf`.
-
----
-
-## 3) Frontend — Novo fluxo: pagar ANTES de acompanhar
-
-Fluxo atual (confuso): insere pedido → vai pra `/pedido/:id` → botão "Pagar agora" aparece só depois do poller.
-
-Fluxo novo para método **online**:
+- **Token público Mapbox** (`pk.*`) por loja, salvo no Supabase. Defesa = URL allowlist no dashboard Mapbox (token público é feito pra viver no browser).
+- **Coordenadas da loja**: `lojas.latitude/longitude`.
+- **Faixas de frete**: nova tabela `loja_frete_faixas` (km_min, km_max, valor).
+- **Distância**: haversine no cliente. Mapbox usado para geocoding + mapa interativo.
 
 ```text
-[Checkout — clique em "Ir para o pagamento"]
-        │
-        ▼
-[Insert do pedido no Supabase (status_pgto=pendente)]
-        │
-        ▼
-[Tela "Aguardando pagamento" — overlay dentro do próprio Checkout]
-   • Spinner + "Estamos gerando seu pagamento seguro..."
-   • Polling a cada 2s em pedidos(id) buscando init_point
-        │
-        ├─ init_point chegou (≤ 60s):
-        │     window.location.href = init_point  → Asaas cuida do resto
-        │
-        └─ timeout 60s sem init_point:
-              Mensagem de erro + 2 botões:
-                • "Tentar de novo"  → re-inicia o polling
-                • "Ver meu pedido"  → navega para /pedido/:id (fallback)
+CEP/rua/número → ViaCEP preenche → Mapbox Geocoding → lat/lng
+                                       │
+                                       ├─ achou: pin no mapa (arrastável)
+                                       └─ NÃO achou: abre mapa em modo manual
+                                                     (cliente arrasta o pin)
+                                       │
+                                       ▼
+                       Haversine(loja, cliente) = km
+                                       │
+              ┌────────────────────────┼────────────────────────┐
+              ▼                        ▼                        ▼
+      km dentro de faixa         km > maior faixa         (geocoding falhou
+      → mostra frete             → "fora de área"          e cliente não fixou pin)
+        habilita botão             bloqueia botão          → botão fica em
+                                                            "confirmar no mapa"
 ```
 
-Após pagar no Asaas, o `return_url` (`#/:slug/pedido/:id`) traz o cliente para a tela de acompanhamento — já com o pagamento processado ou "em_processo" até o webhook.
+## 1) Banco (`supabase/migrations_004_frete.sql`)
 
-Para **`na_entrega`/`dinheiro`**: comportamento atual preservado — vai direto para `/pedido/:id`.
+- `ALTER TABLE public.lojas`
+  - `endereco jsonb`, `latitude numeric(10,7)`, `longitude numeric(10,7)`
+  - `mapbox_public_token text`
+  - `frete_ativo boolean default false`
+- `CREATE TABLE public.loja_frete_faixas` (id, loja_id, km_min, km_max, valor, ordem)
+- GRANTs: `SELECT` p/ `anon` e `authenticated`; `ALL` p/ `service_role`. RLS: leitura pública, escrita só `service_role`.
 
-**Mudanças concretas em `Checkout.tsx`:**
-- Estados novos: `aguardandoPagamento`, `tentativaPolling`.
-- Após `insert` OK com método online: **não navega**; entra em modo de espera e faz `supabase.from("pedidos").select("init_point,status_pgto").eq("id", id)` a cada 2s.
-- Ao encontrar `init_point`: `window.location.href = init_point`.
-- Timeout 60s: mostra fallback com "Tentar de novo" / "Ver meu pedido".
-- Overlay renderizado no próprio componente (não é rota nova).
+## 2) Frontend
 
----
+### a) Tipos (`src/types/db.ts`)
+Adiciona campos novos em `Loja` + novo tipo `FreteFaixa` + entrada em `Database.Tables`.
 
-## 4) Frontend — Acompanhamento (ajuste pequeno)
+### b) `src/lib/mapbox.ts` (novo)
+- `geocodeEndereco(token, {cep,rua,numero,cidade,uf}) → {lat,lng} | null`
+- `reverseGeocode(token, lat, lng) → endereço formatado` (usado quando cliente arrasta pin)
+- `haversineKm(a, b)`
 
-`src/pages/AcompanhamentoPedido.tsx`: como o pagamento agora acontece antes, o botão "Pagar agora" vira **fallback** para quem fechou a aba do Asaas. Só ajuste de copy:
+### c) `src/hooks/useFreteFaixas.ts` (novo)
+Carrega faixas da loja + `calcularFrete(km)` retornando:
+- `{ status: "ok", valor, km, faixa }`
+- `{ status: "fora_area", km, maiorFaixa }` — só quando `km > maior km_max`
 
-- Quando `status_pgto=pendente` e `init_point` existir → título "Você não concluiu o pagamento" + botão "Retomar pagamento".
+### d) `src/components/loja/MapaConfirmacao.tsx` (novo)
+Componente com `mapbox-gl` (biblioteca já pública, usa `pk.*`):
+- Recebe `{ lat, lng, token, onChange(lat,lng) }`.
+- Renderiza mapa centralizado no ponto, com marcador **arrastável**.
+- Ao arrastar/soltar → chama `onChange` com novas coords.
+- Reverse-geocode opcional pra mostrar endereço formatado abaixo do mapa ("Confirme se este é o local exato da entrega").
+- Botão "Usar este local".
 
-Sem toast/confete extra na chegada (o Asaas já mostra a mensagem de sucesso).
+### e) `src/pages/Checkout.tsx`
 
----
+**Máquina de estados do frete** (state único `freteState`):
 
-## 5) Contrato on-premise
+| Estado | Trigger | UI | Botão Finalizar |
+|---|---|---|---|
+| `idle` | modalidade = retirada, ou dados incompletos | — | habilitado (frete = 0) |
+| `calculando` | após ViaCEP + número preenchido, ou pin movido | spinner + "Calculando frete…" | **desabilitado** — label "Calculando frete…" |
+| `ok` | geocoding OK e km em faixa | mostra "Frete (X,X km) R$ Y,YY" + mapa colapsável com pin | habilitado |
+| `fora_area` | km > maior faixa | aviso "A loja não entrega neste endereço (X km)" | **desabilitado** |
+| `precisa_confirmar` | geocoding retornou null | abre `MapaConfirmacao` centrado no CEP (ou cidade) pedindo "Arraste o pin até seu endereço" | **desabilitado** — label "Confirme no mapa" |
 
-Sem mudança de API. Só documentar em `docs/api-onpremise-pagamentos.md` que o poller Asaas deve consumir os novos campos:
+**Regras chave:**
+- Trigger de cálculo: debounce ~500ms após blur do número **OU** movimento do pin.
+- Distinção clara entre **falha de geocoding** (fallback pro mapa manual, nunca bloqueia como fora de área) e **fora de área** (só quando `km > maior km_max`).
+- Botão "Finalizar" nunca fica habilitado durante `calculando`, `fora_area` ou `precisa_confirmar` (evita envio com frete 0).
+- Retirada = ignora tudo, frete 0, botão livre.
+- Se `loja.frete_ativo === false` ou faltar token/lat/lng da loja → modo legado (frete 0, sem mapa, sem bloqueio).
 
-- `pedidos.cliente_email` → `customer.email`
-- `pedidos.cliente_cpf`   → `customer.cpfCnpj`
-- `pedidos.cliente_nome`  → `customer.name`
-- `pedidos.cliente_telefone` → `customer.mobilePhone`
+**Payload do pedido:**
+- `taxa_entrega = valor da faixa` (0 em retirada).
+- `total_general = subtotal + taxa_entrega` — **calculado no front, autoritativo**.
+- Salva `latitude`/`longitude` do cliente no `endereco` (jsonb) para futuras entregas.
 
----
+## 3) Alinhamento com on-premise / Asaas — evitar cobrança dupla
+
+Hoje o `createPreference` do Asaas usa `total_general` (ou, se ausente, `sum(itens) + taxa_entrega`). Como o front agora **sempre** grava `total_general` já incluindo o frete:
+
+- **Regra clara**: on-premise deve usar `total_general` como valor final **sem somar `taxa_entrega` de novo**.
+- `taxa_entrega` no pedido é **informativo** (aparece na nota/comprovante), não parcela adicional.
+- Documentar em `docs/api-onpremise-pagamentos.md` seção **"Cálculo do valor da cobrança"**: pseudocódigo mostrando `valor = pedido.total_general` — nunca `total_general + taxa_entrega`.
+- Adicionar checklist de migração pra você conferir o poller Asaas antes de ligar o frete em produção.
+
+## 4) Acompanhamento
+
+`AcompanhamentoPedido.tsx`: mostrar linha "Frete: R$ Y,YY" no resumo (se `taxa_entrega > 0`), pra ficar transparente pro cliente.
+
+## Dependências novas
+- `mapbox-gl` + `@types/mapbox-gl` (para o mapa com pin arrastável).
+
+## Detalhes técnicos
+
+- **Custo Mapbox**: Geocoding + Maps loads têm 50k–100k/mês grátis. Cada checkout gasta ~1 geocode + ~1 map load. Confortável.
+- **Token por loja**: cada loja paga o próprio consumo. Se quiser token único da plataforma depois, vira só fallback via `import.meta.env`.
+- **Segurança do `pk.*`**: público por design — não vai em `add_secret`, vai na tabela; proteção real é a allowlist de domínios no Mapbox.
+- **Sem Lovable Cloud / sem edge function**.
+- **Compatibilidade**: pedidos existentes seguem funcionando; `taxa_entrega` já existe no schema.
+
+## Fora do escopo
+- Tela admin no front pra editar faixas/token (on-premise cuida).
+- Autocomplete "digite e sugere" (podemos adicionar depois; ViaCEP + geocode + mapa já cobrem o essencial).
+- Cálculo por rota real (mantido haversine conforme sua decisão anterior).
 
 ## Arquivos que serão editados/criados
-
-- `supabase/migrations_003_cliente_pagador.sql` (novo)
-- `src/lib/validators.ts` (novo)
-- `src/types/db.ts` — adiciona `email`, `cpf` em `Cliente`; `cliente_email`, `cliente_cpf` em `Pedido`
-- `src/pages/Checkout.tsx` — campos novos + overlay "aguardando pagamento" + polling
-- `src/pages/AcompanhamentoPedido.tsx` — copy do fallback
-- `docs/api-onpremise-pagamentos.md` — seção "Campos consumidos pelo poller Asaas"
+- `supabase/migrations_004_frete.sql` (novo)
+- `src/types/db.ts`
+- `src/lib/mapbox.ts` (novo)
+- `src/hooks/useFreteFaixas.ts` (novo)
+- `src/components/loja/MapaConfirmacao.tsx` (novo)
+- `src/pages/Checkout.tsx`
+- `src/pages/AcompanhamentoPedido.tsx`
+- `docs/api-onpremise-pagamentos.md` (seção nova sobre `total_general`)
+- `package.json` (dep `mapbox-gl`)
