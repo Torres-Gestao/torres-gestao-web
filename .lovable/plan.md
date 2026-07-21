@@ -1,124 +1,88 @@
-# Plano — Frete automático com Mapbox (v2)
 
-## Arquitetura
+# Home Marketplace — v1 (sem login)
 
-Sem chamar o on-premise no fluxo do cliente. Config no Supabase; cálculo e mapa no browser.
+Escopo enxuto: só a home vira marketplace. Login/perfil fica pra depois.
 
-- **Token público Mapbox** (`pk.*`) por loja, salvo no Supabase. Defesa = URL allowlist no dashboard Mapbox (token público é feito pra viver no browser).
-- **Coordenadas da loja**: `lojas.latitude/longitude`.
-- **Faixas de frete**: nova tabela `loja_frete_faixas` (km_min, km_max, valor).
-- **Distância**: haversine no cliente. Mapbox usado para geocoding + mapa interativo.
+Confirmado: `lojas.horarios_funcionamento jsonb` já existe (preenchido pelo PDV on-premise). Vamos usar.
+
+## Comportamento
 
 ```text
-CEP/rua/número → ViaCEP preenche → Mapbox Geocoding → lat/lng
-                                       │
-                                       ├─ achou: pin no mapa (arrastável)
-                                       └─ NÃO achou: abre mapa em modo manual
-                                                     (cliente arrasta o pin)
-                                       │
-                                       ▼
-                       Haversine(loja, cliente) = km
-                                       │
-              ┌────────────────────────┼────────────────────────┐
-              ▼                        ▼                        ▼
-      km dentro de faixa         km > maior faixa         (geocoding falhou
-      → mostra frete             → "fora de área"          e cliente não fixou pin)
-        habilita botão             bloqueia botão          → botão fica em
-                                                            "confirmar no mapa"
+┌─────────────────────────────────────────┐
+│  Cardápio Digital                       │
+│                                         │
+│  🔍 [ buscar loja por nome... ]         │
+│  📍 Usar minha localização              │
+│                                         │
+│  Lojas perto de você                    │
+│  ┌────┐ ┌────┐ ┌────┐ ┌────┐            │
+│  │logo│ │logo│ │logo│ │logo│            │
+│  │Nome│ │Nome│ │Nome│ │Nome│            │
+│  │1.2k│ │Fech│ │2.8k│ │0.6k│            │
+│  └────┘ └────┘ └────┘ └────┘            │
+│                                         │
+│  ▸ Somente retirada  (colapsável)       │
+└─────────────────────────────────────────┘
 ```
 
-## 1) Banco (`supabase/migrations_004_frete.sql`)
+- Grid de cards: logo + nome + badge "Aberto/Fechado" + distância (se geo ativa).
+- **Busca fuzzy** por nome: normaliza input e nome (`NFD` + remove diacríticos + tira não-alfanumérico + lowercase). "pizzaria do joão" casa com slug `pizzaria-do-joao` sem exigir traços.
+- Enter com 1 match exato → navega direto pra `/{slug}`.
+- **Geolocation opt-in**: botão pede `navigator.geolocation.getCurrentPosition`. Aceito → salva `{lat,lng}` em `localStorage["cliente_geo"]` e reusa nas próximas visitas.
+- **Filtro por raio**: pra cada loja com `frete_ativo` + coords, calcula haversine e mantém onde `distancia_km ≤ raio_max_km` (maior `km_max` das faixas). Loja sem `frete_ativo` ou sem coords cai em "Somente retirada".
+- **Sem geolocation**: mostra todas as ativas com aviso "ative a localização pra ver quem entrega no seu endereço".
+- Clique no card → `navigate("/" + slug)`.
 
-- `ALTER TABLE public.lojas`
-  - `endereco jsonb`, `latitude numeric(10,7)`, `longitude numeric(10,7)`
-  - `mapbox_public_token text`
-  - `frete_ativo boolean default false`
-- `CREATE TABLE public.loja_frete_faixas` (id, loja_id, km_min, km_max, valor, ordem)
-- GRANTs: `SELECT` p/ `anon` e `authenticated`; `ALL` p/ `service_role`. RLS: leitura pública, escrita só `service_role`.
+## Os dois cuidados
 
-## 2) Frontend
+### 1. Mesma função de distância que o checkout ✅
+Reusar `haversineKm` de `src/lib/mapbox.ts`. Zero duplicação.
 
-### a) Tipos (`src/types/db.ts`)
-Adiciona campos novos em `Loja` + novo tipo `FreteFaixa` + entrada em `Database.Tables`.
+### 2. Status aberto/fechado usando `horarios_funcionamento` ✅
+Criar `src/lib/loja-status.ts` com `isLojaAberta(loja): boolean`:
 
-### b) `src/lib/mapbox.ts` (novo)
-- `geocodeEndereco(token, {cep,rua,numero,cidade,uf}) → {lat,lng} | null`
-- `reverseGeocode(token, lat, lng) → endereço formatado` (usado quando cliente arrasta pin)
-- `haversineKm(a, b)`
+- Lê `loja.horarios_funcionamento` (formato do PDV: `{ "dom":{"abre":"10:00","fecha":"21:45"}, "seg":{...}, ..., "tz"?: "America/Sao_Paulo" }`).
+- Descobre o dia da semana **no timezone** correto (default `America/Sao_Paulo` se `tz` ausente) e checa se `now.HH:mm` está entre `abre` e `fecha`. Suporta janela que atravessa meia-noite (ex.: `fecha < abre`).
+- Suporta múltiplas janelas por dia (array `[{abre,fecha}, ...]`) além do formato objeto único — pra não quebrar quando o PDV evoluir.
+- **Fallback**: se `horarios_funcionamento` for `null`/vazio ou dia sem entrada → cai em `loja.loja_aberta`.
+- Substituir os usos hoje diretos de `loja.loja_aberta` por `isLojaAberta(loja)` em: `LojaHeader.tsx`, `Carrinho.tsx`, e nos cards da home.
 
-### c) `src/hooks/useFreteFaixas.ts` (novo)
-Carrega faixas da loja + `calcularFrete(km)` retornando:
-- `{ status: "ok", valor, km, faixa }`
-- `{ status: "fora_area", km, maiorFaixa }` — só quando `km > maior km_max`
+## Banco (migration 005)
 
-### d) `src/components/loja/MapaConfirmacao.tsx` (novo)
-Componente com `mapbox-gl` (biblioteca já pública, usa `pk.*`):
-- Recebe `{ lat, lng, token, onChange(lat,lng) }`.
-- Renderiza mapa centralizado no ponto, com marcador **arrastável**.
-- Ao arrastar/soltar → chama `onChange` com novas coords.
-- Reverse-geocode opcional pra mostrar endereço formatado abaixo do mapa ("Confirme se este é o local exato da entrega").
-- Botão "Usar este local".
+View pública pra home fazer 1 request só (sem expor tokens/credenciais):
 
-### e) `src/pages/Checkout.tsx`
+```sql
+create or replace view public.lojas_publicas as
+select
+  l.id, l.slug, l.nome, l.logo_url, l.cor_primaria, l.cor_secundaria,
+  l.loja_aberta, l.horarios_funcionamento,
+  l.latitude, l.longitude, l.frete_ativo,
+  coalesce(max(f.km_max), 0) as raio_max_km
+from public.lojas l
+left join public.loja_frete_faixas f on f.loja_id = l.id
+group by l.id;
 
-**Máquina de estados do frete** (state único `freteState`):
+grant select on public.lojas_publicas to anon, authenticated;
+```
 
-| Estado | Trigger | UI | Botão Finalizar |
-|---|---|---|---|
-| `idle` | modalidade = retirada, ou dados incompletos | — | habilitado (frete = 0) |
-| `calculando` | após ViaCEP + número preenchido, ou pin movido | spinner + "Calculando frete…" | **desabilitado** — label "Calculando frete…" |
-| `ok` | geocoding OK e km em faixa | mostra "Frete (X,X km) R$ Y,YY" + mapa colapsável com pin | habilitado |
-| `fora_area` | km > maior faixa | aviso "A loja não entrega neste endereço (X km)" | **desabilitado** |
-| `precisa_confirmar` | geocoding retornou null | abre `MapaConfirmacao` centrado no CEP (ou cidade) pedindo "Arraste o pin até seu endereço" | **desabilitado** — label "Confirme no mapa" |
+Nada de `mapbox_public_token` nem `endereco` da loja na view — home não precisa.
 
-**Regras chave:**
-- Trigger de cálculo: debounce ~500ms após blur do número **OU** movimento do pin.
-- Distinção clara entre **falha de geocoding** (fallback pro mapa manual, nunca bloqueia como fora de área) e **fora de área** (só quando `km > maior km_max`).
-- Botão "Finalizar" nunca fica habilitado durante `calculando`, `fora_area` ou `precisa_confirmar` (evita envio com frete 0).
-- Retirada = ignora tudo, frete 0, botão livre.
-- Se `loja.frete_ativo === false` ou faltar token/lat/lng da loja → modo legado (frete 0, sem mapa, sem bloqueio).
+## Arquivos
 
-**Payload do pedido:**
-- `taxa_entrega = valor da faixa` (0 em retirada).
-- `total_general = subtotal + taxa_entrega` — **calculado no front, autoritativo**.
-- Salva `latitude`/`longitude` do cliente no `endereco` (jsonb) para futuras entregas.
+- `supabase/migrations_005_home_marketplace.sql` — view `lojas_publicas` + grant.
+- `src/types/db.ts` — adicionar `HorariosFuncionamento` e `LojaPublica`.
+- `src/lib/normalize.ts` — `normalizarBusca(s)`.
+- `src/lib/geo.ts` — `useGeoloc()` (localStorage + estados idle/loading/ok/denied).
+- `src/lib/loja-status.ts` — `isLojaAberta(loja)` com fallback.
+- `src/hooks/useLojasPublicas.ts` — React Query da view.
+- `src/components/marketplace/LojaCard.tsx`
+- `src/components/marketplace/BuscaLojas.tsx`
+- `src/pages/Home.tsx` — reescrita (grid + busca + geo + seção "somente retirada"). Mantém a identidade roxa/amarela num header slim; o resto é fundo neutro pra dar destaque aos cards.
+- `src/components/loja/LojaHeader.tsx` — trocar `loja.loja_aberta` por `isLojaAberta(loja)`.
+- `src/pages/Carrinho.tsx` — mesma troca no botão "loja fechada".
 
-## 3) Alinhamento com on-premise / Asaas — evitar cobrança dupla
-
-Hoje o `createPreference` do Asaas usa `total_general` (ou, se ausente, `sum(itens) + taxa_entrega`). Como o front agora **sempre** grava `total_general` já incluindo o frete:
-
-- **Regra clara**: on-premise deve usar `total_general` como valor final **sem somar `taxa_entrega` de novo**.
-- `taxa_entrega` no pedido é **informativo** (aparece na nota/comprovante), não parcela adicional.
-- Documentar em `docs/api-onpremise-pagamentos.md` seção **"Cálculo do valor da cobrança"**: pseudocódigo mostrando `valor = pedido.total_general` — nunca `total_general + taxa_entrega`.
-- Adicionar checklist de migração pra você conferir o poller Asaas antes de ligar o frete em produção.
-
-## 4) Acompanhamento
-
-`AcompanhamentoPedido.tsx`: mostrar linha "Frete: R$ Y,YY" no resumo (se `taxa_entrega > 0`), pra ficar transparente pro cliente.
-
-## Dependências novas
-- `mapbox-gl` + `@types/mapbox-gl` (para o mapa com pin arrastável).
-
-## Detalhes técnicos
-
-- **Custo Mapbox**: Geocoding + Maps loads têm 50k–100k/mês grátis. Cada checkout gasta ~1 geocode + ~1 map load. Confortável.
-- **Token por loja**: cada loja paga o próprio consumo. Se quiser token único da plataforma depois, vira só fallback via `import.meta.env`.
-- **Segurança do `pk.*`**: público por design — não vai em `add_secret`, vai na tabela; proteção real é a allowlist de domínios no Mapbox.
-- **Sem Lovable Cloud / sem edge function**.
-- **Compatibilidade**: pedidos existentes seguem funcionando; `taxa_entrega` já existe no schema.
-
-## Fora do escopo
-- Tela admin no front pra editar faixas/token (on-premise cuida).
-- Autocomplete "digite e sugere" (podemos adicionar depois; ViaCEP + geocode + mapa já cobrem o essencial).
-- Cálculo por rota real (mantido haversine conforme sua decisão anterior).
-
-## Arquivos que serão editados/criados
-- `supabase/migrations_004_frete.sql` (novo)
-- `src/types/db.ts`
-- `src/lib/mapbox.ts` (novo)
-- `src/hooks/useFreteFaixas.ts` (novo)
-- `src/components/loja/MapaConfirmacao.tsx` (novo)
-- `src/pages/Checkout.tsx`
-- `src/pages/AcompanhamentoPedido.tsx`
-- `docs/api-onpremise-pagamentos.md` (seção nova sobre `total_general`)
-- `package.json` (dep `mapbox-gl`)
+## Fora de escopo (fica pra depois)
+- Login/cadastro do cliente.
+- Perfil global (endereço reutilizado entre lojas).
+- Histórico de pedidos.
+- Destaques / ordenação por popularidade.
