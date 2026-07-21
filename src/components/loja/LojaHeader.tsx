@@ -1,7 +1,11 @@
 import type { Loja } from "@/types/db";
 import { Store, Phone } from "lucide-react";
+import { isLojaAberta } from "@/lib/loja-status";
+
+
 
 export default function LojaHeader({ loja }: { loja: Loja }) {
+  const aberta = isLojaAberta(loja);
   const cor = loja.cor_primaria ?? "#6B21A8";
   return (
     <header
@@ -23,17 +27,17 @@ export default function LojaHeader({ loja }: { loja: Loja }) {
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
             <span
               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${
-                loja.loja_aberta
+                aberta
                   ? "bg-emerald-500/30 text-emerald-50"
                   : "bg-red-500/30 text-red-50"
               }`}
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  loja.loja_aberta ? "bg-emerald-300" : "bg-red-300"
+                  aberta ? "bg-emerald-300" : "bg-red-300"
                 }`}
               />
-              {loja.loja_aberta ? "Aberto agora" : "Fechado"}
+              {aberta ? "Aberto agora" : "Fechado"}
             </span>
             {loja.telefone_contato && (
               <span className="inline-flex items-center gap-1 opacity-90">

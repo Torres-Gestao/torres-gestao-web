@@ -104,9 +104,9 @@ export default function Carrinho() {
         className="mt-6 h-12 w-full text-base"
         style={{ backgroundColor: "var(--brand-primary, #6B21A8)" }}
         onClick={() => navigate(`/${loja.slug}/checkout`)}
-        disabled={!loja.loja_aberta}
+        disabled={!aberta}
       >
-        {loja.loja_aberta ? "Continuar para o checkout" : "Loja fechada no momento"}
+        {aberta ? "Continuar para o checkout" : "Loja fechada no momento"}
       </Button>
     </div>
   );
