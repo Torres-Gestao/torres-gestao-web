@@ -4,11 +4,14 @@ import { useCarrinho } from "@/hooks/useCarrinho";
 import { brl } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Minus, Plus, Trash2, ArrowLeft } from "lucide-react";
+import { isLojaAberta } from "@/lib/loja-status";
 
 export default function Carrinho() {
   const { loja } = useOutletContext<{ loja: Loja }>();
   const navigate = useNavigate();
   const { itens, atualizarQuantidade, remover, subtotal } = useCarrinho();
+  const aberta = isLojaAberta(loja);
+
 
   if (itens.length === 0) {
     return (
@@ -104,9 +107,9 @@ export default function Carrinho() {
         className="mt-6 h-12 w-full text-base"
         style={{ backgroundColor: "var(--brand-primary, #6B21A8)" }}
         onClick={() => navigate(`/${loja.slug}/checkout`)}
-        disabled={!loja.loja_aberta}
+        disabled={!aberta}
       >
-        {loja.loja_aberta ? "Continuar para o checkout" : "Loja fechada no momento"}
+        {aberta ? "Continuar para o checkout" : "Loja fechada no momento"}
       </Button>
     </div>
   );

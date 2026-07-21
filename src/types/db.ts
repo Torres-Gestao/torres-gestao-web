@@ -1,5 +1,24 @@
 // Tipos manuais que espelham o schema Supabase.
 
+import type { HorariosFuncionamento } from "@/lib/loja-status";
+export type { HorariosFuncionamento };
+
+export interface LojaPublica {
+  id: string;
+  slug: string;
+  nome: string;
+  logo_url: string | null;
+  cor_primaria: string | null;
+  cor_secundaria: string | null;
+  loja_aberta: boolean | null;
+  horarios_funcionamento: HorariosFuncionamento | null;
+  latitude: number | null;
+  longitude: number | null;
+  frete_ativo: boolean | null;
+  raio_max_km: number | null;
+}
+
+
 export interface Loja {
   id: string;
   nome: string;
@@ -9,6 +28,7 @@ export interface Loja {
   cor_secundaria: string | null;
   telefone_contato: string | null;
   loja_aberta: boolean | null;
+  horarios_funcionamento: HorariosFuncionamento | null;
   created_at: string | null;
   // Frete (migration 004)
   endereco: EnderecoCliente | null;
