@@ -184,29 +184,75 @@ export default function ProdutoModal({ produto, onClose }: Props) {
                 ) : (
                   <div className="space-y-1">
                     {opts.map((o) => {
-                      const checked = selecionados.includes(o.nome);
-                      const bloqueado = !checked && selecionados.length >= max;
+                      const count = selecionados.filter((x) => x === o.nome).length;
+                      const bloqueado = selecionados.length >= max;
                       return (
-                        <label
+                        <div
                           key={o.nome}
-                          className={`flex items-center justify-between rounded-lg border p-2.5 text-sm ${
-                            bloqueado ? "opacity-50" : "cursor-pointer"
-                          }`}
+                          className="flex items-center justify-between rounded-lg border p-2.5 text-sm"
                         >
-                          <span className="flex items-center gap-2">
-                            <Checkbox
-                              checked={checked}
+                          <div className="flex min-w-0 flex-col">
+                            <span className="truncate">{o.nome}</span>
+                            {o.preco > 0 && (
+                              <span className="text-xs text-muted-foreground">
+                                + {brl(o.preco)}
+                              </span>
+                            )}
+                          </div>
+                          {count === 0 ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
                               disabled={bloqueado}
-                              onCheckedChange={(v) =>
-                                toggle(p.id, o.nome, v === true, p.max_selections)
+                              onClick={() =>
+                                setSelecoes((prev) => ({
+                                  ...prev,
+                                  [p.id]: [...(prev[p.id] ?? []), o.nome],
+                                }))
                               }
-                            />
-                            <span>{o.nome}</span>
-                          </span>
-                          {o.preco > 0 && (
-                            <span className="text-xs text-muted-foreground">+ {brl(o.preco)}</span>
+                            >
+                              Adicionar
+                            </Button>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() =>
+                                  setSelecoes((prev) => {
+                                    const atual = [...(prev[p.id] ?? [])];
+                                    const idx = atual.lastIndexOf(o.nome);
+                                    if (idx >= 0) atual.splice(idx, 1);
+                                    return { ...prev, [p.id]: atual };
+                                  })
+                                }
+                              >
+                                <Minus className="h-3 w-3" />
+                              </Button>
+                              <span className="w-5 text-center text-sm font-semibold">
+                                {count}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-7 w-7"
+                                disabled={bloqueado}
+                                onClick={() =>
+                                  setSelecoes((prev) => ({
+                                    ...prev,
+                                    [p.id]: [...(prev[p.id] ?? []), o.nome],
+                                  }))
+                                }
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </div>
                           )}
-                        </label>
+                        </div>
                       );
                     })}
                   </div>
