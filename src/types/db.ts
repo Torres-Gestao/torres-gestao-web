@@ -1,7 +1,8 @@
 // Tipos manuais que espelham o schema Supabase.
 
 import type { HorariosFuncionamento } from "@/lib/loja-status";
-export type { HorariosFuncionamento };
+import type { TrackingData } from "@/hooks/useTracking";
+export type { HorariosFuncionamento, TrackingData };
 
 export interface LojaPublica {
   id: string;
