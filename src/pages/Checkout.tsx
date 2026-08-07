@@ -394,6 +394,14 @@ export default function Checkout() {
       const cliente = await upsertCliente(telefoneDigits);
       const novoPedidoId = crypto.randomUUID();
 
+      // Tracking nunca pode derrubar o pedido: isolado em try/catch.
+      let origem: TrackingData | null = null;
+      try {
+        origem = getTracking();
+      } catch {
+        origem = null;
+      }
+
       // total_general já inclui o frete — on-premise NÃO deve somar taxa_entrega
       // novamente ao criar a cobrança no Asaas (ver docs/api-onpremise-pagamentos.md).
       const payload = {
