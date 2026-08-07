@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import { CarrinhoProvider } from "@/hooks/useCarrinho";
+import { useTracking } from "@/hooks/useTracking";
 import Home from "@/pages/Home";
 import LojaShell from "@/components/loja/LojaShell";
 import Vitrine from "@/pages/Vitrine";
@@ -9,6 +10,8 @@ import AcompanhamentoPedido from "@/pages/AcompanhamentoPedido";
 import NotFound from "@/pages/NotFound";
 
 export default function App() {
+  useTracking();
+
   return (
     <CarrinhoProvider>
       <Routes>
