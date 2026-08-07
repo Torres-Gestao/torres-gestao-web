@@ -1,88 +1,63 @@
+# Rastreamento de origem (UTM + referrer) no checkout
 
-# Home Marketplace — v1 (sem login)
+Capturar de onde o cliente veio (campanha paga ou tráfego orgânico) e gravar isso junto com o pedido.
 
-Escopo enxuto: só a home vira marketplace. Login/perfil fica pra depois.
-
-Confirmado: `lojas.horarios_funcionamento jsonb` já existe (preenchido pelo PDV on-premise). Vamos usar.
-
-## Comportamento
+## Como funciona
 
 ```text
-┌─────────────────────────────────────────┐
-│  Cardápio Digital                       │
-│                                         │
-│  🔍 [ buscar loja por nome... ]         │
-│  📍 Usar minha localização              │
-│                                         │
-│  Lojas perto de você                    │
-│  ┌────┐ ┌────┐ ┌────┐ ┌────┐            │
-│  │logo│ │logo│ │logo│ │logo│            │
-│  │Nome│ │Nome│ │Nome│ │Nome│            │
-│  │1.2k│ │Fech│ │2.8k│ │0.6k│            │
-│  └────┘ └────┘ └────┘ └────┘            │
-│                                         │
-│  ▸ Somente retirada  (colapsável)       │
-└─────────────────────────────────────────┘
+Cliente acessa /pizzaria?utm_source=instagram&utm_medium=stories
+        │
+        ▼
+useTracking() no boot  ──►  sessionStorage["torres_gestao_tracking"]
+        │                    { utm_source, utm_medium, utm_campaign,
+        │                      utm_term, utm_content, referrer,
+        │                      landing_page, captured_at }
+        ▼
+Checkout lê a sessão  ──►  pedidos.origem (jsonb)
 ```
 
-- Grid de cards: logo + nome + badge "Aberto/Fechado" + distância (se geo ativa).
-- **Busca fuzzy** por nome: normaliza input e nome (`NFD` + remove diacríticos + tira não-alfanumérico + lowercase). "pizzaria do joão" casa com slug `pizzaria-do-joao` sem exigir traços.
-- Enter com 1 match exato → navega direto pra `/{slug}`.
-- **Geolocation opt-in**: botão pede `navigator.geolocation.getCurrentPosition`. Aceito → salva `{lat,lng}` em `localStorage["cliente_geo"]` e reusa nas próximas visitas.
-- **Filtro por raio**: pra cada loja com `frete_ativo` + coords, calcula haversine e mantém onde `distancia_km ≤ raio_max_km` (maior `km_max` das faixas). Loja sem `frete_ativo` ou sem coords cai em "Somente retirada".
-- **Sem geolocation**: mostra todas as ativas com aviso "ative a localização pra ver quem entrega no seu endereço".
-- Clique no card → `navigate("/" + slug)`.
+- Grava **na primeira** visita da sessão e não sobrescreve depois (a primeira origem é a que vale). Exceção: se chegar uma nova visita **com UTM** e a sessão só tiver referrer, atualiza — campanha paga tem prioridade sobre orgânico.
+- `sessionStorage` = o rastreio morre quando o cliente fecha a aba, como pedido.
+- Acesso direto (sem UTM e sem referrer) grava `origem: null` no pedido.
 
-## Os dois cuidados
+## Banco — migration 007
 
-### 1. Mesma função de distância que o checkout ✅
-Reusar `haversineKm` de `src/lib/mapbox.ts`. Zero duplicação.
-
-### 2. Status aberto/fechado usando `horarios_funcionamento` ✅
-Criar `src/lib/loja-status.ts` com `isLojaAberta(loja): boolean`:
-
-- Lê `loja.horarios_funcionamento` (formato do PDV: `{ "dom":{"abre":"10:00","fecha":"21:45"}, "seg":{...}, ..., "tz"?: "America/Sao_Paulo" }`).
-- Descobre o dia da semana **no timezone** correto (default `America/Sao_Paulo` se `tz` ausente) e checa se `now.HH:mm` está entre `abre` e `fecha`. Suporta janela que atravessa meia-noite (ex.: `fecha < abre`).
-- Suporta múltiplas janelas por dia (array `[{abre,fecha}, ...]`) além do formato objeto único — pra não quebrar quando o PDV evoluir.
-- **Fallback**: se `horarios_funcionamento` for `null`/vazio ou dia sem entrada → cai em `loja.loja_aberta`.
-- Substituir os usos hoje diretos de `loja.loja_aberta` por `isLojaAberta(loja)` em: `LojaHeader.tsx`, `Carrinho.tsx`, e nos cards da home.
-
-## Banco (migration 005)
-
-View pública pra home fazer 1 request só (sem expor tokens/credenciais):
+`supabase/migrations_007_origem_pedido.sql`:
 
 ```sql
-create or replace view public.lojas_publicas as
-select
-  l.id, l.slug, l.nome, l.logo_url, l.cor_primaria, l.cor_secundaria,
-  l.loja_aberta, l.horarios_funcionamento,
-  l.latitude, l.longitude, l.frete_ativo,
-  coalesce(max(f.km_max), 0) as raio_max_km
-from public.lojas l
-left join public.loja_frete_faixas f on f.loja_id = l.id
-group by l.id;
-
-grant select on public.lojas_publicas to anon, authenticated;
+alter table public.pedidos
+  add column if not exists origem jsonb;
 ```
 
-Nada de `mapbox_public_token` nem `endereco` da loja na view — home não precisa.
+Sem RLS nova: `pedidos` já permite INSERT pelo anônimo e o SELECT continua só via `get_pedido()`.
 
 ## Arquivos
 
-- `supabase/migrations_005_home_marketplace.sql` — view `lojas_publicas` + grant.
-- `src/types/db.ts` — adicionar `HorariosFuncionamento` e `LojaPublica`.
-- `src/lib/normalize.ts` — `normalizarBusca(s)`.
-- `src/lib/geo.ts` — `useGeoloc()` (localStorage + estados idle/loading/ok/denied).
-- `src/lib/loja-status.ts` — `isLojaAberta(loja)` com fallback.
-- `src/hooks/useLojasPublicas.ts` — React Query da view.
-- `src/components/marketplace/LojaCard.tsx`
-- `src/components/marketplace/BuscaLojas.tsx`
-- `src/pages/Home.tsx` — reescrita (grid + busca + geo + seção "somente retirada"). Mantém a identidade roxa/amarela num header slim; o resto é fundo neutro pra dar destaque aos cards.
-- `src/components/loja/LojaHeader.tsx` — trocar `loja.loja_aberta` por `isLojaAberta(loja)`.
-- `src/pages/Carrinho.tsx` — mesma troca no botão "loja fechada".
+**`src/hooks/useTracking.ts`** (novo)
+- `TrackingData` — tipo com as 5 UTMs + `referrer` + `landing_page` + `captured_at`.
+- `useTracking()` — `useEffect` no boot: lê `URLSearchParams` da URL atual, lê `document.referrer` (ignorando referrer do próprio host, que é navegação interna) e persiste segundo a regra acima.
+- `getTracking(): TrackingData | null` — leitura pura, exportada pra ser usada fora de componente (no checkout).
 
-## Fora de escopo (fica pra depois)
-- Login/cadastro do cliente.
-- Perfil global (endereço reutilizado entre lojas).
-- Histórico de pedidos.
-- Destaques / ordenação por popularidade.
+**`src/App.tsx`**
+- Invoca `useTracking()` no topo, dentro do `CarrinhoProvider`, antes das `Routes`. Roda em qualquer rota — marketplace ou loja.
+
+**`src/pages/Checkout.tsx`**
+- Antes do `insert` em `pedidos`, chama `getTracking()`.
+- Adiciona `origem` ao `payload`. `null` quando não há UTM nem referrer externo.
+
+**`src/types/db.ts`**
+- `origem: TrackingData | null` na interface `Pedido`.
+
+## Detalhes técnicos
+
+- Só as chaves com valor são gravadas — nada de `utm_source: null` poluindo o JSON.
+- Valores truncados em 255 chars para evitar payload inflado por URL maliciosa.
+- Referrer do mesmo hostname é descartado (é navegação interna, não origem).
+- `landing_page` guarda o caminho de entrada (`/pizzaria-do-joao`), útil pra saber qual link da campanha converteu.
+- Nada de pixel de terceiro (Meta/Google Ads) nesta etapa — só coleta first-party no nosso banco.
+
+## Fora de escopo
+
+- Dashboard/relatório de origem no PDV (o dado fica disponível em `pedidos.origem` pra você consultar).
+- Integração com Meta Pixel / Google Analytics.
+- Atribuição cross-device ou persistência além da sessão (`localStorage`/cookie).
