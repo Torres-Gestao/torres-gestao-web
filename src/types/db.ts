@@ -223,6 +223,8 @@ export interface Pedido {
   created_at: string | null;
   agendado: boolean;
   data_agendada: string | null;
+  // Origem do cliente (UTM + referrer) capturada no front
+  origem: TrackingData | null;
   // ---- Pagamento online ----
   status_pgto: StatusPagamento;
   metodo_pgto: MetodoPagamento | null;
