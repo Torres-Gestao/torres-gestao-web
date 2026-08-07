@@ -433,6 +433,7 @@ export default function Checkout() {
         status_web: "pendente" as const,
         agendado: false,
         data_agendada: null,
+        origem,
       };
 
       const { error } = await supabase
