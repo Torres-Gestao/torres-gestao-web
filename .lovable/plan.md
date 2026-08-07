@@ -51,10 +51,31 @@ Sem RLS nova: `pedidos` já permite INSERT pelo anônimo e o SELECT continua só
 ## Detalhes técnicos
 
 - Só as chaves com valor são gravadas — nada de `utm_source: null` poluindo o JSON.
-- Valores truncados em 255 chars para evitar payload inflado por URL maliciosa.
 - Referrer do mesmo hostname é descartado (é navegação interna, não origem).
 - `landing_page` guarda o caminho de entrada (`/pizzaria-do-joao`), útil pra saber qual link da campanha converteu.
 - Nada de pixel de terceiro (Meta/Google Ads) nesta etapa — só coleta first-party no nosso banco.
+
+### Truncamento: por valor, nunca no JSON montado
+
+O alerta procede. O corte é aplicado **em cada string individual, antes** de montar o objeto:
+
+```ts
+const safe = (v: string | null) =>
+  v ? v.slice(0, 255) : undefined;   // nunca corta o JSON serializado
+```
+
+Cortar o JSON já serializado produziria `{"utm_source":"instagr` — JSON inválido, `INSERT` recusado pela coluna `jsonb`, venda perdida. Isso não vai acontecer: o objeto é montado com valores já curtos e enviado como objeto JS (o supabase-js serializa), sem nenhuma manipulação de string no JSON final.
+
+### O pedido nunca cai por causa do tracking
+
+Três camadas de proteção, porque a venda vale mais que o dado de marketing:
+
+1. `useTracking` inteiro dentro de `try/catch` — `sessionStorage` bloqueado (modo privado, iframe, cota cheia) não quebra o boot.
+2. `getTracking()` dentro de `try/catch` com `JSON.parse` protegido — sessão corrompida devolve `null`, não lança.
+3. No `Checkout`, o `origem` é montado num `try/catch` isolado: qualquer erro na coleta → `origem = null` e o pedido segue normal. O tracking jamais entra no caminho crítico do `insert`.
+
+Além disso: só as 5 chaves UTM conhecidas + `referrer` + `landing_page` + `captured_at` são gravadas (allowlist). Parâmetros arbitrários da URL são ignorados, então não há como inflar o payload nem injetar estrutura inesperada.
+
 
 ## Fora de escopo
 
