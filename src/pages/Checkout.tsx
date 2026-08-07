@@ -14,6 +14,7 @@ import { brl, formatPhone, onlyDigits } from "@/lib/money";
 import { buscarCep, formatCep } from "@/lib/cep";
 import { formatCpf, isValidCpf, isValidEmail } from "@/lib/validators";
 import { useFreteFaixas, type CalculoFrete } from "@/hooks/useFreteFaixas";
+import { getTracking, type TrackingData } from "@/hooks/useTracking";
 import { geocodeEndereco, haversineKm, type LatLng } from "@/lib/mapbox";
 import MapaConfirmacao from "@/components/loja/MapaConfirmacao";
 import { Button } from "@/components/ui/button";
