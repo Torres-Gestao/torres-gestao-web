@@ -1,7 +1,8 @@
 // Tipos manuais que espelham o schema Supabase.
 
 import type { HorariosFuncionamento } from "@/lib/loja-status";
-export type { HorariosFuncionamento };
+import type { TrackingData } from "@/hooks/useTracking";
+export type { HorariosFuncionamento, TrackingData };
 
 export interface LojaPublica {
   id: string;
@@ -223,6 +224,8 @@ export interface Pedido {
   created_at: string | null;
   agendado: boolean;
   data_agendada: string | null;
+  // Origem do cliente (UTM + referrer) capturada no front
+  origem: TrackingData | null;
   // ---- Pagamento online ----
   status_pgto: StatusPagamento;
   metodo_pgto: MetodoPagamento | null;
