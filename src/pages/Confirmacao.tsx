@@ -1,3 +1,4 @@
+import { tenantPath } from "@/lib/tenant";
 import { Link, useLocation, useOutletContext, useParams } from "react-router-dom";
 import type { Loja, Pedido } from "@/types/db";
 import { CheckCircle2, MessageCircle } from "lucide-react";

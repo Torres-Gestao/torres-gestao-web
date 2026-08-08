@@ -1,3 +1,4 @@
+import { tenantPath } from "@/lib/tenant";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext, useNavigate, Link } from "react-router-dom";
 import type {

@@ -1,3 +1,4 @@
+import { tenantPath } from "@/lib/tenant";
 import { useEffect, useRef, useState } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";

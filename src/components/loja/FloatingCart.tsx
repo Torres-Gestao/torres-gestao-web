@@ -1,3 +1,4 @@
+import { tenantPath } from "@/lib/tenant";
 import { Link } from "react-router-dom";
 import { ShoppingBag } from "lucide-react";
 import { useCarrinho } from "@/hooks/useCarrinho";

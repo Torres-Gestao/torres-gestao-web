@@ -1,3 +1,4 @@
+import { tenantPath } from "@/lib/tenant";
 import { Link, useOutletContext, useNavigate } from "react-router-dom";
 import type { Loja } from "@/types/db";
 import { useCarrinho } from "@/hooks/useCarrinho";
