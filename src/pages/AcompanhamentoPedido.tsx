@@ -1,3 +1,4 @@
+import { tenantPath } from "@/lib/tenant";
 import { useEffect, useRef, useState } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
@@ -95,7 +96,7 @@ export default function AcompanhamentoPedido() {
     return (
       <div className="py-16 text-center">
         <p className="text-muted-foreground">{erro ?? "Pedido não encontrado."}</p>
-        <Link to={`/${loja.slug}`} className="mt-4 inline-block text-sm underline">
+        <Link to={tenantPath(loja.slug)} className="mt-4 inline-block text-sm underline">
           Voltar ao cardápio
         </Link>
       </div>
@@ -112,7 +113,7 @@ export default function AcompanhamentoPedido() {
   return (
     <div className="py-6">
       <div className="mb-6 flex items-center gap-2">
-        <Link to={`/${loja.slug}`} className="text-muted-foreground hover:text-foreground">
+        <Link to={tenantPath(loja.slug)} className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
@@ -261,7 +262,7 @@ export default function AcompanhamentoPedido() {
       </div>
 
       <div className="mt-6 text-center">
-        <Link to={`/${loja.slug}`} className="text-sm underline">
+        <Link to={tenantPath(loja.slug)} className="text-sm underline">
           Voltar ao cardápio
         </Link>
       </div>

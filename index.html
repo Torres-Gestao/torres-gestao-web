@@ -11,6 +11,17 @@
     <meta property="og:description" content="Peça online direto pelo cardápio digital." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Compatibilidade com links antigos do HashRouter (#/loja/carrinho -> /loja/carrinho).
+      // Roda antes do bundle para o router já iniciar na rota certa.
+      (function () {
+        var h = window.location.hash;
+        if (h.indexOf("#/") === 0) {
+          var alvo = h.slice(1) || "/";
+          window.history.replaceState(null, "", alvo + window.location.search);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

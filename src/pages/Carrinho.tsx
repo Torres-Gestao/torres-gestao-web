@@ -1,3 +1,4 @@
+import { tenantPath } from "@/lib/tenant";
 import { Link, useOutletContext, useNavigate } from "react-router-dom";
 import type { Loja } from "@/types/db";
 import { useCarrinho } from "@/hooks/useCarrinho";
@@ -18,7 +19,7 @@ export default function Carrinho() {
       <div className="py-16 text-center">
         <p className="text-muted-foreground">Seu carrinho está vazio.</p>
         <Link
-          to={`/${loja.slug}`}
+          to={tenantPath(loja.slug)}
           className="mt-4 inline-flex items-center gap-1 text-sm font-medium"
           style={{ color: "var(--brand-primary, #6B21A8)" }}
         >
@@ -31,7 +32,7 @@ export default function Carrinho() {
   return (
     <div className="pb-8">
       <div className="mb-4 flex items-center gap-2">
-        <Link to={`/${loja.slug}`} className="text-muted-foreground hover:text-foreground">
+        <Link to={tenantPath(loja.slug)} className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <h2 className="text-lg font-bold">Seu pedido</h2>
@@ -106,7 +107,7 @@ export default function Carrinho() {
       <Button
         className="mt-6 h-12 w-full text-base"
         style={{ backgroundColor: "var(--brand-primary, #6B21A8)" }}
-        onClick={() => navigate(`/${loja.slug}/checkout`)}
+        onClick={() => navigate(tenantPath(loja.slug, "checkout"))}
         disabled={!aberta}
       >
         {aberta ? "Continuar para o checkout" : "Loja fechada no momento"}

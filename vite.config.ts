@@ -3,14 +3,12 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
-// GitHub Pages base path.
-// Repo: torres-gestao-web  ->  https://<user>.github.io/torres-gestao-web/
-// Em desenvolvimento (Lovable preview) mantemos "/" para não quebrar o iframe.
+// Deploy alvo: Cloudflare Pages (domínio próprio por lojista) -> base "/".
+// VITE_BASE_PATH permite sobrescrever (ex.: subpasta no GitHub Pages).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const isProd = mode === "production";
   return {
-    base: isProd ? (env.VITE_BASE_PATH ?? "/torres-gestao-web/") : "/",
+    base: env.VITE_BASE_PATH ?? "/",
     plugins: [react(), tailwindcss(), tsconfigPaths()],
     server: {
       host: "::",

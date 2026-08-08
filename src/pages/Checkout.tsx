@@ -1,3 +1,4 @@
+import { tenantPath } from "@/lib/tenant";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext, useNavigate, Link } from "react-router-dom";
 import type {
@@ -227,7 +228,7 @@ export default function Checkout() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  navigate(`/${loja.slug}/pedido/${aguardando.pedidoId}`, { replace: true })
+                  navigate(tenantPath(loja.slug, `pedido/${aguardando.pedidoId}`), { replace: true })
                 }
               >
                 Ver meu pedido
@@ -243,7 +244,7 @@ export default function Checkout() {
     return (
       <div className="py-16 text-center">
         <p className="text-muted-foreground">Adicione itens antes de finalizar.</p>
-        <Link to={`/${loja.slug}`} className="mt-4 inline-block text-sm underline">
+        <Link to={tenantPath(loja.slug)} className="mt-4 inline-block text-sm underline">
           Voltar ao cardápio
         </Link>
       </div>
@@ -449,7 +450,7 @@ export default function Checkout() {
       } else {
         limpar();
         toast.success("Pedido enviado com sucesso!");
-        navigate(`/${loja.slug}/pedido/${novoPedidoId}`, { replace: true });
+        navigate(tenantPath(loja.slug, `pedido/${novoPedidoId}`), { replace: true });
       }
     } catch (err) {
       console.error(err);
@@ -475,7 +476,7 @@ export default function Checkout() {
   return (
     <div className="pb-10">
       <div className="mb-4 flex items-center gap-2">
-        <Link to={`/${loja.slug}/carrinho`} className="text-muted-foreground hover:text-foreground">
+        <Link to={tenantPath(loja.slug, "carrinho")} className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <h2 className="text-lg font-bold">Finalizar pedido</h2>

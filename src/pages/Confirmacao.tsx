@@ -1,3 +1,4 @@
+import { tenantPath } from "@/lib/tenant";
 import { Link, useLocation, useOutletContext, useParams } from "react-router-dom";
 import type { Loja, Pedido } from "@/types/db";
 import { CheckCircle2, MessageCircle } from "lucide-react";
@@ -50,7 +51,7 @@ export default function Confirmacao() {
       )}
 
       <div className="mt-8">
-        <Link to={`/${loja.slug}`} className="text-sm underline">
+        <Link to={tenantPath(loja.slug)} className="text-sm underline">
           Fazer outro pedido
         </Link>
       </div>
