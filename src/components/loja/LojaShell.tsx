@@ -1,6 +1,7 @@
 import { Outlet, useNavigate, useParams } from "react-router-dom";
 import { useEffect } from "react";
 import { useLoja } from "@/hooks/useLoja";
+import { useTenant } from "@/hooks/useTenant";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import LojaHeader from "./LojaHeader";
 import FloatingCart from "./FloatingCart";
@@ -9,14 +10,21 @@ import { Loader2 } from "lucide-react";
 export default function LojaShell() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const { data: loja, isLoading, isError } = useLoja(slug);
+  const { loja: lojaTenant, isCustomDomain } = useTenant();
+  // No domínio próprio a loja já veio do resolve_tenant; não refaz o fetch.
+  const {
+    data: lojaSlug,
+    isLoading,
+    isError,
+  } = useLoja(isCustomDomain ? undefined : slug);
+  const loja = isCustomDomain ? lojaTenant : (lojaSlug ?? null);
   const { setSlug } = useCarrinho();
 
   useEffect(() => {
-    if (slug) setSlug(slug);
-  }, [slug, setSlug]);
+    if (loja?.slug) setSlug(loja.slug);
+  }, [loja?.slug, setSlug]);
 
-  if (isLoading) {
+  if (!isCustomDomain && isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
