@@ -10,7 +10,7 @@ export default function FloatingCart({ slug }: { slug: string }) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <Link
-        to={`/${slug}/carrinho`}
+        to={tenantPath(slug, "carrinho")}
         className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 rounded-xl px-4 py-3 text-white shadow-lg transition-transform active:scale-[0.98]"
         style={{ backgroundColor: "var(--brand-primary, #6B21A8)" }}
       >

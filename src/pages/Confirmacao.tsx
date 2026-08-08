@@ -50,7 +50,7 @@ export default function Confirmacao() {
       )}
 
       <div className="mt-8">
-        <Link to={`/${loja.slug}`} className="text-sm underline">
+        <Link to={tenantPath(loja.slug)} className="text-sm underline">
           Fazer outro pedido
         </Link>
       </div>
