@@ -442,7 +442,16 @@ export default function Checkout() {
       }
     }
 
+    // Cupom pode ter expirado entre o "Aplicar" e o "Finalizar".
+    const check = cupons.revalidar();
+    if (!check.ok) {
+      cupons.remover();
+      toast.error(check.mensagem ?? "Cupom inválido");
+      return;
+    }
+
     setEnviando(true);
+
     try {
       const telefoneDigits = onlyDigits(telefone);
       const cliente = await upsertCliente(telefoneDigits);
