@@ -1,0 +1,181 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import type { Cupom } from "@/types/db";
+import {
+  MENSAGENS,
+  RESULTADO_VAZIO,
+  combinar,
+  normalizaCodigo,
+  validarCupom,
+  type CupomCtx,
+  type ItemCtx,
+  type ResultadoCupons,
+  type UsosCupom,
+} from "@/lib/cupons";
+
+interface Params {
+  lojaId: string;
+  itens: ItemCtx[];
+  subtotal: number;
+  taxaEntrega: number;
+  telefone: string; // apenas dígitos
+}
+
+export function useCupons({ lojaId, itens, subtotal, taxaEntrega, telefone }: Params) {
+  const [cupons, setCupons] = useState<Cupom[]>([]);
+  const [codigoAplicado, setCodigoAplicado] = useState<string | null>(null);
+  const [validando, setValidando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [usos, setUsos] = useState<Record<string, UsosCupom>>({});
+  const [primeiraCompra, setPrimeiraCompra] = useState(true);
+  const telefoneRef = useRef(telefone);
+  telefoneRef.current = telefone;
+
+  useEffect(() => {
+    if (!lojaId) return;
+    let ativo = true;
+    (async () => {
+      const { data } = await supabase
+        .from("cupons" as never)
+        .select("*")
+        .eq("loja_id", lojaId)
+        .eq("ativo", true);
+      if (!ativo) return;
+      setCupons(((data as unknown) as Cupom[] | null) ?? []);
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [lojaId]);
+
+  const ctxBase = useMemo<Omit<CupomCtx, "dataHora">>(
+    () => ({
+      canal: "delivery",
+      itens,
+      subtotal,
+      taxaEntrega,
+      primeiraCompra,
+      usos,
+    }),
+    [itens, subtotal, taxaEntrega, primeiraCompra, usos],
+  );
+
+  // Promoções automáticas: cupons sem código.
+  const automaticos = useMemo(
+    () => cupons.filter((c) => !c.codigo || !c.codigo.trim()),
+    [cupons],
+  );
+
+  const resultado = useMemo<ResultadoCupons>(() => {
+    const ctx: CupomCtx = { ...ctxBase, dataHora: new Date() };
+    const candidatos: { cupom: Cupom; desconto: number; sobreEntrega: boolean }[] = [];
+
+    for (const c of automaticos) {
+      const v = validarCupom(c, ctx);
+      if (v.ok) candidatos.push({ cupom: c, desconto: v.desconto, sobreEntrega: v.sobreEntrega });
+    }
+
+    if (codigoAplicado) {
+      const cupom = cupons.find(
+        (c) => (c.codigo ?? "").trim().toUpperCase() === codigoAplicado,
+      );
+      if (cupom) {
+        const v = validarCupom(cupom, ctx);
+        if (v.ok) candidatos.push({ cupom, desconto: v.desconto, sobreEntrega: v.sobreEntrega });
+      }
+    }
+
+    if (candidatos.length === 0) return RESULTADO_VAZIO;
+    return combinar(candidatos, ctx);
+  }, [automaticos, codigoAplicado, cupons, ctxBase]);
+
+  // Busca contadores necessários para validar limites e primeira compra.
+  const carregarContadores = useCallback(
+    async (cupomId: string) => {
+      const tel = telefoneRef.current || null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase.rpc as any)("contar_usos_cupom", {
+        p_cupom_id: cupomId,
+        p_telefone: tel,
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = ((data as any[] | null) ?? [])[0];
+      const u: UsosCupom = {
+        total: Number(row?.total ?? 0),
+        doCliente: Number(row?.do_cliente ?? 0),
+      };
+      setUsos((prev) => ({ ...prev, [cupomId]: u }));
+
+      if (tel) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: qtd } = await (supabase.rpc as any)("contar_pedidos_cliente", {
+          p_loja_id: lojaId,
+          p_telefone: tel,
+        });
+        setPrimeiraCompra(Number(qtd ?? 0) === 0);
+      }
+      return u;
+    },
+    [lojaId],
+  );
+
+  const aplicarCodigo = useCallback(
+    async (codigoBruto: string): Promise<boolean> => {
+      const codigo = normalizaCodigo(codigoBruto);
+      if (!codigo) {
+        setErro("Digite um código de cupom.");
+        return false;
+      }
+      setValidando(true);
+      setErro(null);
+      try {
+        const cupom = cupons.find((c) => (c.codigo ?? "").trim().toUpperCase() === codigo);
+        if (!cupom) {
+          setErro(MENSAGENS.inexistente);
+          return false;
+        }
+        const u = await carregarContadores(cupom.id);
+        const ctx: CupomCtx = {
+          ...ctxBase,
+          usos: { ...ctxBase.usos, [cupom.id]: u },
+          dataHora: new Date(),
+        };
+        const v = validarCupom(cupom, ctx);
+        if (!v.ok) {
+          setErro(MENSAGENS[v.motivo]);
+          return false;
+        }
+        setCodigoAplicado(codigo);
+        return true;
+      } finally {
+        setValidando(false);
+      }
+    },
+    [cupons, ctxBase, carregarContadores],
+  );
+
+  const remover = useCallback(() => {
+    setCodigoAplicado(null);
+    setErro(null);
+  }, []);
+
+  // Revalida no envio: o cupom pode ter expirado entre aplicar e finalizar.
+  const revalidar = useCallback((): { ok: boolean; mensagem?: string } => {
+    if (!codigoAplicado) return { ok: true };
+    const cupom = cupons.find((c) => (c.codigo ?? "").trim().toUpperCase() === codigoAplicado);
+    if (!cupom) return { ok: false, mensagem: MENSAGENS.inexistente };
+    const v = validarCupom(cupom, { ...ctxBase, dataHora: new Date() });
+    if (!v.ok) return { ok: false, mensagem: MENSAGENS[v.motivo] };
+    return { ok: true };
+  }, [codigoAplicado, cupons, ctxBase]);
+
+  return {
+    codigoAplicado,
+    aplicarCodigo,
+    remover,
+    revalidar,
+    validando,
+    erro,
+    resultado,
+  };
+}

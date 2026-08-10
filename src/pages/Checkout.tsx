@@ -15,6 +15,8 @@ import { brl, formatPhone, onlyDigits } from "@/lib/money";
 import { buscarCep, formatCep } from "@/lib/cep";
 import { formatCpf, isValidCpf, isValidEmail } from "@/lib/validators";
 import { useFreteFaixas, type CalculoFrete } from "@/hooks/useFreteFaixas";
+import { useCupons } from "@/hooks/useCupons";
+
 import { getTracking, type TrackingData } from "@/hooks/useTracking";
 import { geocodeEndereco, haversineKm, type LatLng } from "@/lib/mapbox";
 import MapaConfirmacao from "@/components/loja/MapaConfirmacao";
@@ -32,6 +34,8 @@ import {
   ShieldCheck,
   MapPin,
   AlertCircle,
+  Ticket,
+
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -74,6 +78,8 @@ export default function Checkout() {
   const [uf, setUf] = useState("");
   const [complemento, setComplemento] = useState("");
   const [observacao, setObservacao] = useState("");
+  const [cupomInput, setCupomInput] = useState("");
+
   const [loadingCep, setLoadingCep] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [mostrarMapa, setMostrarMapa] = useState(false);
@@ -122,6 +128,31 @@ export default function Checkout() {
   }, [loja.id]);
 
   const brand = "var(--brand-primary, #6B21A8)";
+
+  // Mapa produto -> categoria (usado pelos cupons com escopo por itens/categorias).
+  const [produtoCategoria, setProdutoCategoria] = useState<Record<string, string | null>>({});
+  const idsCarrinho = itens.map((i) => i.produto_id).join(",");
+  useEffect(() => {
+    const ids = idsCarrinho ? idsCarrinho.split(",") : [];
+    if (ids.length === 0) return;
+    let ativo = true;
+    (async () => {
+      const { data } = await supabase
+        .from("produtos")
+        .select("id,categoria_id")
+        .in("id", ids);
+      if (!ativo) return;
+      const map: Record<string, string | null> = {};
+      ((data as { id: string; categoria_id: string | null }[] | null) ?? []).forEach((p) => {
+        map[p.id] = p.categoria_id;
+      });
+      setProdutoCategoria(map);
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [idsCarrinho]);
+
 
   // ---------- Cálculo do frete ----------
   const lojaCoord = useMemo<LatLng | null>(() => {
@@ -352,9 +383,33 @@ export default function Checkout() {
     setAguardando({ pedidoId, status: "timeout" });
   }
 
-  const taxaEntrega =
+  const taxaEntregaBruta =
     modalidade === "delivery" && freteState.kind === "ok" ? freteState.valor : 0;
-  const total = subtotal + taxaEntrega;
+
+  const itensCupom = useMemo(
+    () =>
+      itens.map((i) => ({
+        produtoId: i.produto_id,
+        categoriaId: produtoCategoria[i.produto_id] ?? null,
+        qtd: i.quantidade,
+        preco: i.preco_unitario,
+      })),
+    [itens, produtoCategoria],
+  );
+
+  const cupons = useCupons({
+    lojaId: loja.id,
+    itens: itensCupom,
+    subtotal,
+    taxaEntrega: taxaEntregaBruta,
+    telefone: onlyDigits(telefone),
+  });
+
+  const { descontoProdutos, descontoEntrega, entregaGratis, aplicados, principal } =
+    cupons.resultado;
+  const descontoTotal = Number((descontoProdutos + descontoEntrega).toFixed(2));
+  const taxaEntrega = Number(Math.max(taxaEntregaBruta - descontoEntrega, 0).toFixed(2));
+  const total = Number(Math.max(subtotal + taxaEntregaBruta - descontoTotal, 0).toFixed(2));
 
   // Regras de bloqueio do botão Finalizar
   const bloqueadoPorFrete =
@@ -364,6 +419,7 @@ export default function Checkout() {
       freteState.kind === "fora_area" ||
       freteState.kind === "precisa_confirmar" ||
       freteState.kind === "idle");
+
 
   async function enviar() {
     if (!nome.trim() || !telefone.trim()) {
@@ -390,7 +446,16 @@ export default function Checkout() {
       }
     }
 
+    // Cupom pode ter expirado entre o "Aplicar" e o "Finalizar".
+    const check = cupons.revalidar();
+    if (!check.ok) {
+      cupons.remover();
+      toast.error(check.mensagem ?? "Cupom inválido");
+      return;
+    }
+
     setEnviando(true);
+
     try {
       const telefoneDigits = onlyDigits(telefone);
       const cliente = await upsertCliente(telefoneDigits);
@@ -426,6 +491,12 @@ export default function Checkout() {
         total_produtos: subtotal,
         taxa_entrega: taxaEntrega,
         total_general: total,
+        cupom_id: principal?.id ?? null,
+        cupom_codigo: principal?.codigo ?? null,
+        valor_desconto: descontoTotal,
+        entrega_gratis: entregaGratis,
+        cupons_aplicados: aplicados,
+
         forma_pagamento: metodoToFormaLegada(metodo),
         metodo_pgto: metodo,
         status_pgto: isOnline ? ("pendente" as const) : ("nao_aplicavel" as const),
@@ -746,15 +817,86 @@ export default function Checkout() {
           />
         </section>
 
+        {/* Cupom */}
+        <section className="space-y-3 rounded-xl border bg-card p-4">
+          <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <Ticket className="h-4 w-4" />
+            Cupom de desconto
+          </h3>
+          {cupons.codigoAplicado ? (
+            <div className="flex items-center justify-between rounded-lg border border-dashed p-3 text-sm">
+              <div>
+                <p className="font-semibold">{cupons.codigoAplicado}</p>
+                <p className="text-xs text-muted-foreground">
+                  Desconto de {brl(descontoTotal)} aplicado
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  cupons.remover();
+                  setCupomInput("");
+                }}
+                className="text-xs underline text-muted-foreground"
+              >
+                Remover
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Input
+                value={cupomInput}
+                onChange={(e) => setCupomInput(e.target.value.toUpperCase())}
+                placeholder="Digite seu cupom"
+                maxLength={40}
+                aria-label="Código do cupom"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={cupons.validando || !cupomInput.trim()}
+                onClick={() => cupons.aplicarCodigo(cupomInput)}
+              >
+                {cupons.validando ? <Loader2 className="h-4 w-4 animate-spin" /> : "Aplicar"}
+              </Button>
+            </div>
+          )}
+          {cupons.erro && <p className="text-xs text-red-600">{cupons.erro}</p>}
+          {aplicados
+            .filter((a) => !a.codigo)
+            .map((a) => (
+              <p key={a.id} className="text-xs" style={{ color: brand }}>
+                Promoção aplicada: {a.nome ?? "desconto automático"} (−{brl(a.desconto)})
+              </p>
+            ))}
+        </section>
+
         <section className="space-y-2 rounded-xl border bg-card p-4">
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Subtotal</span>
             <span>{brl(subtotal)}</span>
           </div>
-          {taxaEntrega > 0 && (
+          {descontoTotal > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Frete</span>
-              <span>{brl(taxaEntrega)}</span>
+              <span className="text-muted-foreground">Desconto</span>
+              <span style={{ color: brand }}>−{brl(descontoTotal)}</span>
+            </div>
+          )}
+          {taxaEntregaBruta > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Taxa de entrega</span>
+              {entregaGratis ? (
+                <span>
+                  <span className="mr-2 line-through text-muted-foreground">
+                    {brl(taxaEntregaBruta)}
+                  </span>
+                  <span className="font-semibold" style={{ color: brand }}>
+                    Grátis
+                  </span>
+                </span>
+              ) : (
+                <span>{brl(taxaEntrega)}</span>
+              )}
             </div>
           )}
           <div className="flex justify-between text-base font-bold">
@@ -762,6 +904,7 @@ export default function Checkout() {
             <span>{brl(total)}</span>
           </div>
         </section>
+
 
         <Button
           className="h-12 w-full text-base"

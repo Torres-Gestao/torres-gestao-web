@@ -248,17 +248,35 @@ export default function AcompanhamentoPedido() {
             <span>Subtotal</span>
             <span>{brl(pedido.total_produtos)}</span>
           </div>
-          {pedido.taxa_entrega != null && Number(pedido.taxa_entrega) > 0 && (
+          {pedido.valor_desconto != null && Number(pedido.valor_desconto) > 0 && (
             <div className="flex justify-between text-muted-foreground">
-              <span>Frete</span>
-              <span>{brl(Number(pedido.taxa_entrega))}</span>
+              <span>
+                Desconto
+                {pedido.cupom_codigo ? ` (${pedido.cupom_codigo})` : ""}
+              </span>
+              <span>−{brl(Number(pedido.valor_desconto))}</span>
             </div>
+          )}
+          {pedido.entrega_gratis ? (
+            <div className="flex justify-between text-muted-foreground">
+              <span>Taxa de entrega</span>
+              <span className="font-medium">Grátis</span>
+            </div>
+          ) : (
+            pedido.taxa_entrega != null &&
+            Number(pedido.taxa_entrega) > 0 && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>Taxa de entrega</span>
+                <span>{brl(Number(pedido.taxa_entrega))}</span>
+              </div>
+            )
           )}
           <div className="flex justify-between pt-1 text-base font-bold text-foreground">
             <span>Total</span>
             <span>{brl(pedido.total_general)}</span>
           </div>
         </div>
+
       </div>
 
       <div className="mt-6 text-center">
