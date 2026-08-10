@@ -352,9 +352,33 @@ export default function Checkout() {
     setAguardando({ pedidoId, status: "timeout" });
   }
 
-  const taxaEntrega =
+  const taxaEntregaBruta =
     modalidade === "delivery" && freteState.kind === "ok" ? freteState.valor : 0;
-  const total = subtotal + taxaEntrega;
+
+  const itensCupom = useMemo(
+    () =>
+      itens.map((i) => ({
+        produtoId: i.produto_id,
+        categoriaId: produtoCategoria[i.produto_id] ?? null,
+        qtd: i.quantidade,
+        preco: i.preco_unitario,
+      })),
+    [itens, produtoCategoria],
+  );
+
+  const cupons = useCupons({
+    lojaId: loja.id,
+    itens: itensCupom,
+    subtotal,
+    taxaEntrega: taxaEntregaBruta,
+    telefone: onlyDigits(telefone),
+  });
+
+  const { descontoProdutos, descontoEntrega, entregaGratis, aplicados, principal } =
+    cupons.resultado;
+  const descontoTotal = Number((descontoProdutos + descontoEntrega).toFixed(2));
+  const taxaEntrega = Number(Math.max(taxaEntregaBruta - descontoEntrega, 0).toFixed(2));
+  const total = Number(Math.max(subtotal + taxaEntregaBruta - descontoTotal, 0).toFixed(2));
 
   // Regras de bloqueio do botão Finalizar
   const bloqueadoPorFrete =
@@ -364,6 +388,7 @@ export default function Checkout() {
       freteState.kind === "fora_area" ||
       freteState.kind === "precisa_confirmar" ||
       freteState.kind === "idle");
+
 
   async function enviar() {
     if (!nome.trim() || !telefone.trim()) {
