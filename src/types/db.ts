@@ -278,6 +278,13 @@ export interface Pedido {
   init_point: string | null;
   valor_pago: number | null;
   pago_em: string | null;
+  // ---- Cupons / desconto ----
+  cupom_id: string | null;
+  cupom_codigo: string | null;
+  valor_desconto: number | null;
+  entrega_gratis: boolean | null;
+  cupons_aplicados: CupomAplicado[] | null;
+
 }
 
 
