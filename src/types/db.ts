@@ -299,6 +299,8 @@ export interface Database {
       perguntas: { Row: Pergunta; Insert: Partial<Pergunta>; Update: Partial<Pergunta> };
       clientes: { Row: Cliente; Insert: Partial<Cliente>; Update: Partial<Cliente> };
       loja_frete_faixas: { Row: FreteFaixa; Insert: Partial<FreteFaixa>; Update: Partial<FreteFaixa> };
+      cupons: { Row: Cupom; Insert: Partial<Cupom>; Update: Partial<Cupom> };
+
       pedidos: {
         Row: Pedido;
         Insert: Omit<Partial<Pedido>, "itens"> & { itens: PedidoItem[] };
