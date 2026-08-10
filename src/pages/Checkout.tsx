@@ -125,6 +125,31 @@ export default function Checkout() {
 
   const brand = "var(--brand-primary, #6B21A8)";
 
+  // Mapa produto -> categoria (usado pelos cupons com escopo por itens/categorias).
+  const [produtoCategoria, setProdutoCategoria] = useState<Record<string, string | null>>({});
+  const idsCarrinho = itens.map((i) => i.produto_id).join(",");
+  useEffect(() => {
+    const ids = idsCarrinho ? idsCarrinho.split(",") : [];
+    if (ids.length === 0) return;
+    let ativo = true;
+    (async () => {
+      const { data } = await supabase
+        .from("produtos")
+        .select("id,categoria_id")
+        .in("id", ids);
+      if (!ativo) return;
+      const map: Record<string, string | null> = {};
+      ((data as { id: string; categoria_id: string | null }[] | null) ?? []).forEach((p) => {
+        map[p.id] = p.categoria_id;
+      });
+      setProdutoCategoria(map);
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [idsCarrinho]);
+
+
   // ---------- Cálculo do frete ----------
   const lojaCoord = useMemo<LatLng | null>(() => {
     if (loja.latitude == null || loja.longitude == null) return null;
