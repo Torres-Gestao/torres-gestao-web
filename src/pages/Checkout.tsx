@@ -478,6 +478,12 @@ export default function Checkout() {
         total_produtos: subtotal,
         taxa_entrega: taxaEntrega,
         total_general: total,
+        cupom_id: principal?.id ?? null,
+        cupom_codigo: principal?.codigo ?? null,
+        valor_desconto: descontoTotal,
+        entrega_gratis: entregaGratis,
+        cupons_aplicados: aplicados,
+
         forma_pagamento: metodoToFormaLegada(metodo),
         metodo_pgto: metodo,
         status_pgto: isOnline ? ("pendente" as const) : ("nao_aplicavel" as const),
