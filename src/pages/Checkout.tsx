@@ -78,6 +78,8 @@ export default function Checkout() {
   const [uf, setUf] = useState("");
   const [complemento, setComplemento] = useState("");
   const [observacao, setObservacao] = useState("");
+  const [cupomInput, setCupomInput] = useState("");
+
   const [loadingCep, setLoadingCep] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [mostrarMapa, setMostrarMapa] = useState(false);
