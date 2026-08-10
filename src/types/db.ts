@@ -49,6 +49,50 @@ export interface FreteFaixa {
   created_at: string;
 }
 
+// ---------- Cupons / promoções ----------
+export type CupomEscopo = "pedido" | "itens" | "entrega";
+export type CupomTipo =
+  | "percentual"
+  | "valor_fixo"
+  | "leve_x_pague_y"
+  | "compre_x_ganhe_desconto"
+  | "item_gratis";
+
+export interface Cupom {
+  id: string;
+  loja_id: string;
+  pdv_cupom_id: string;
+  codigo: string | null; // null/vazio = promoção automática
+  nome: string | null;
+  ativo: boolean;
+  tipo: CupomTipo | string | null;
+  valor: number | null;
+  escopo: CupomEscopo | string | null;
+  canais: unknown; // jsonb string[]
+  produtos_alvo: unknown; // jsonb uuid[]
+  categorias_alvo: unknown; // jsonb uuid[]
+  valor_minimo: number | null;
+  qtd_minima: number | null;
+  regra: unknown; // jsonb
+  limite_uso_total: number | null;
+  limite_por_cliente: number | null;
+  tem_limite_por_cliente: boolean | null;
+  primeira_compra: boolean | null;
+  acumulavel: boolean | null;
+  prioridade: number | null;
+  agendamento: unknown; // jsonb
+  updated_at: string | null;
+}
+
+export interface CupomAplicado {
+  id: string;
+  codigo: string | null;
+  nome: string | null;
+  desconto: number;
+  escopo: CupomEscopo;
+}
+
+
 export interface Categoria {
   id: string;
   loja_id: string;
