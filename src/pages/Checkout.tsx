@@ -813,15 +813,86 @@ export default function Checkout() {
           />
         </section>
 
+        {/* Cupom */}
+        <section className="space-y-3 rounded-xl border bg-card p-4">
+          <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <Ticket className="h-4 w-4" />
+            Cupom de desconto
+          </h3>
+          {cupons.codigoAplicado ? (
+            <div className="flex items-center justify-between rounded-lg border border-dashed p-3 text-sm">
+              <div>
+                <p className="font-semibold">{cupons.codigoAplicado}</p>
+                <p className="text-xs text-muted-foreground">
+                  Desconto de {brl(descontoTotal)} aplicado
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  cupons.remover();
+                  setCupomInput("");
+                }}
+                className="text-xs underline text-muted-foreground"
+              >
+                Remover
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Input
+                value={cupomInput}
+                onChange={(e) => setCupomInput(e.target.value.toUpperCase())}
+                placeholder="Digite seu cupom"
+                maxLength={40}
+                aria-label="Código do cupom"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={cupons.validando || !cupomInput.trim()}
+                onClick={() => cupons.aplicarCodigo(cupomInput)}
+              >
+                {cupons.validando ? <Loader2 className="h-4 w-4 animate-spin" /> : "Aplicar"}
+              </Button>
+            </div>
+          )}
+          {cupons.erro && <p className="text-xs text-red-600">{cupons.erro}</p>}
+          {aplicados
+            .filter((a) => !a.codigo)
+            .map((a) => (
+              <p key={a.id} className="text-xs" style={{ color: brand }}>
+                Promoção aplicada: {a.nome ?? "desconto automático"} (−{brl(a.desconto)})
+              </p>
+            ))}
+        </section>
+
         <section className="space-y-2 rounded-xl border bg-card p-4">
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Subtotal</span>
             <span>{brl(subtotal)}</span>
           </div>
-          {taxaEntrega > 0 && (
+          {descontoTotal > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Frete</span>
-              <span>{brl(taxaEntrega)}</span>
+              <span className="text-muted-foreground">Desconto</span>
+              <span style={{ color: brand }}>−{brl(descontoTotal)}</span>
+            </div>
+          )}
+          {taxaEntregaBruta > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Taxa de entrega</span>
+              {entregaGratis ? (
+                <span>
+                  <span className="mr-2 line-through text-muted-foreground">
+                    {brl(taxaEntregaBruta)}
+                  </span>
+                  <span className="font-semibold" style={{ color: brand }}>
+                    Grátis
+                  </span>
+                </span>
+              ) : (
+                <span>{brl(taxaEntrega)}</span>
+              )}
             </div>
           )}
           <div className="flex justify-between text-base font-bold">
@@ -829,6 +900,7 @@ export default function Checkout() {
             <span>{brl(total)}</span>
           </div>
         </section>
+
 
         <Button
           className="h-12 w-full text-base"
