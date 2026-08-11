@@ -93,9 +93,17 @@ export function normalizaCodigo(codigo: string): string {
   return codigo
     .trim()
     .toUpperCase()
-    .replace(/[^A-Z0-9-]/g, "")
+    .replace(/[^A-Z0-9\-_.]/g, "")
     .slice(0, 40);
 }
+
+// Compara códigos normalizando os dois lados (evita divergência com o PDV).
+export function mesmoCodigo(a: string | null | undefined, b: string | null | undefined): boolean {
+  const na = normalizaCodigo(a ?? "");
+  const nb = normalizaCodigo(b ?? "");
+  return na.length > 0 && na === nb;
+}
+
 
 // ---------- Vigência ----------
 function minutosDoDia(d: Date) {
