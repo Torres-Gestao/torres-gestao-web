@@ -19,3 +19,24 @@ Em `src/hooks/useCupons.ts`:
 - Extrair a lógica de contagem para uma função reutilizável, evitando duplicação com `aplicarCodigo` e evitando chamadas repetidas para o mesmo par (cupom, telefone) via cache em ref.
 
 Nada muda em `src/lib/cupons.ts` (o motor já valida limites e primeira compra), no banco ou no payload do pedido: `cupons_aplicados` já grava os automáticos e `cupom_id`/`cupom_codigo` continuam priorizando o cupom digitado.
+
+---
+
+# Ajustes adicionais no checkout
+
+## 1. Nome e telefone obrigatórios
+
+- Marcar visualmente os campos "Nome completo" e "WhatsApp / Telefone" como obrigatórios (asterisco + `required`/`aria-required`).
+- Validar antes de enviar: nome com pelo menos 3 caracteres e telefone com 10 ou 11 dígitos. Hoje só se checa se estão vazios, então "a" e "1" passam.
+- Mostrar erro embaixo do campo (além do toast) e manter o botão Finalizar bloqueado enquanto qualquer um dos dois for inválido.
+
+## 2. Confirmação de endereço no mapa como etapa obrigatória
+
+- Renomear a seção/bloco do mapa para "Confirmação de endereço" e trocar o texto auxiliar para algo como "Arraste o pin até a porta da sua casa e confirme — é assim que o entregador te encontra."
+- O mapa passa a aparecer sempre que a modalidade for entrega, o frete estiver ativo e já houver uma coordenada (geocodificada ou padrão), não apenas quando o Mapbox falha ou quando o cliente clica em "Ajustar no mapa". O botão "Ajustar no mapa" deixa de existir.
+- Novo estado no checkout: `enderecoConfirmado` (boolean). Começa `false`, e volta a `false` sempre que o endereço mudar (rua, número, bairro, cidade, UF, CEP), quando o geocode rodar de novo ou quando o pin for arrastado.
+- Abaixo do mapa, um botão "Confirmar este local" que marca `enderecoConfirmado = true` e exibe a confirmação com o endereço do reverse geocode.
+- Finalizar fica bloqueado enquanto `enderecoConfirmado` for `false` na modalidade entrega com frete ativo; o rótulo do botão passa a "Confirme o endereço no mapa".
+- A coordenada confirmada continua sendo a usada no cálculo do frete e é gravada em `clientes.endereco` (`latitude`/`longitude`), como já acontece hoje.
+
+Retirada no local segue sem mapa e sem essa obrigatoriedade.
