@@ -40,3 +40,10 @@ Nada muda em `src/lib/cupons.ts` (o motor já valida limites e primeira compra),
 - A coordenada confirmada continua sendo a usada no cálculo do frete e é gravada em `clientes.endereco` (`latitude`/`longitude`), como já acontece hoje.
 
 Retirada no local segue sem mapa e sem essa obrigatoriedade.
+
+## 3. Telefone/WhatsApp internacional
+
+- O campo de telefone passa a aceitar número internacional: seletor de país (DDI) ao lado do input, com Brasil (+55) pré-selecionado.
+- Máscara e validação por país: com +55 mantém o formato atual `(00) 00000-0000` e exige 10-11 dígitos; com outros DDIs o campo aceita dígitos livres e valida um intervalo genérico (7 a 15 dígitos, padrão E.164).
+- O valor gravado em `clientes.telefone` e `pedidos.cliente_telefone` passa a ser o número completo em E.164 sem o "+" (ex.: `5562999998888`, `351912345678`), mantendo compatibilidade com o que o PDV já recebe hoje para números do Brasil.
+- Os lugares que hoje usam `onlyDigits(telefone)` (upsert do cliente, contagem de usos de cupom, primeira compra) passam a usar esse mesmo número normalizado, para que a identificação do cliente continue consistente.
