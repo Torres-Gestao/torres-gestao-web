@@ -5,6 +5,7 @@ import {
   MENSAGENS,
   RESULTADO_VAZIO,
   combinar,
+  mesmoCodigo,
   normalizaCodigo,
   validarCupom,
   type CupomCtx,
@@ -76,9 +77,7 @@ export function useCupons({ lojaId, itens, subtotal, taxaEntrega, telefone }: Pa
     }
 
     if (codigoAplicado) {
-      const cupom = cupons.find(
-        (c) => (c.codigo ?? "").trim().toUpperCase() === codigoAplicado,
-      );
+      const cupom = cupons.find((c) => mesmoCodigo(c.codigo, codigoAplicado));
       if (cupom) {
         const v = validarCupom(cupom, ctx);
         if (v.ok) candidatos.push({ cupom, desconto: v.desconto, sobreEntrega: v.sobreEntrega });
@@ -129,7 +128,7 @@ export function useCupons({ lojaId, itens, subtotal, taxaEntrega, telefone }: Pa
       setValidando(true);
       setErro(null);
       try {
-        const cupom = cupons.find((c) => (c.codigo ?? "").trim().toUpperCase() === codigo);
+        const cupom = cupons.find((c) => mesmoCodigo(c.codigo, codigo));
         if (!cupom) {
           setErro(MENSAGENS.inexistente);
           return false;
@@ -162,7 +161,7 @@ export function useCupons({ lojaId, itens, subtotal, taxaEntrega, telefone }: Pa
   // Revalida no envio: o cupom pode ter expirado entre aplicar e finalizar.
   const revalidar = useCallback((): { ok: boolean; mensagem?: string } => {
     if (!codigoAplicado) return { ok: true };
-    const cupom = cupons.find((c) => (c.codigo ?? "").trim().toUpperCase() === codigoAplicado);
+    const cupom = cupons.find((c) => mesmoCodigo(c.codigo, codigoAplicado));
     if (!cupom) return { ok: false, mensagem: MENSAGENS.inexistente };
     const v = validarCupom(cupom, { ...ctxBase, dataHora: new Date() });
     if (!v.ok) return { ok: false, mensagem: MENSAGENS[v.motivo] };
