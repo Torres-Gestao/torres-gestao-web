@@ -204,7 +204,6 @@ export default function Checkout() {
       // Cai no modo manual: pedir pra confirmar no mapa, centrando na loja.
       const centro = lojaCoord ?? { lat: -14.235, lng: -51.9253 };
       setFreteState({ kind: "precisa_confirmar", coord: centro });
-      setMostrarMapa(true);
       return;
     }
     setFreteState(aplicarCalculo(coord));
@@ -212,6 +211,8 @@ export default function Checkout() {
 
   // Debounce: recalcula quando os campos essenciais mudam.
   useEffect(() => {
+    // Endereço mudou → confirmação anterior deixa de valer.
+    setEnderecoConfirmado(false);
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       recalcular();
@@ -224,10 +225,12 @@ export default function Checkout() {
 
   function handlePinMove(lat: number, lng: number) {
     const coord = { lat, lng };
+    setEnderecoConfirmado(false);
     setFreteState({ kind: "calculando" });
     // Cálculo é síncrono após termos coord confirmado.
     setTimeout(() => setFreteState(aplicarCalculo(coord)), 100);
   }
+
 
   // ---------- Tela de espera do pagamento ----------
   if (aguardando) {
