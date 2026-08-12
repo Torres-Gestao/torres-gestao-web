@@ -412,12 +412,17 @@ export default function Checkout() {
     [itens, produtoCategoria],
   );
 
+  // Telefone sempre gravado em E.164 sem "+" (ex.: 5562999998888).
+  const telefoneNormalizado = telefoneE164(ddi, telefone);
+  const telefoneValido = isTelefoneValido(ddi, telefone);
+  const nomeValido = nome.trim().length >= 3;
+
   const cupons = useCupons({
     lojaId: loja.id,
     itens: itensCupom,
     subtotal,
     taxaEntrega: taxaEntregaBruta,
-    telefone: onlyDigits(telefone),
+    telefone: telefoneValido ? telefoneNormalizado : "",
   });
 
   const { descontoProdutos, descontoEntrega, entregaGratis, aplicados, principal } =
@@ -435,10 +440,25 @@ export default function Checkout() {
       freteState.kind === "precisa_confirmar" ||
       freteState.kind === "idle");
 
+  // Confirmação do pin é obrigatória sempre que o mapa está disponível na entrega.
+  const precisaConfirmarEndereco =
+    modalidade === "delivery" &&
+    freteHabilitado &&
+    !!loja.mapbox_public_token &&
+    !!coordAtual &&
+    !enderecoConfirmado;
+
+  const bloqueadoDados = !nomeValido || !telefoneValido;
 
   async function enviar() {
-    if (!nome.trim() || !telefone.trim()) {
-      toast.error("Preencha seu nome e telefone");
+    setTocouNome(true);
+    setTocouTelefone(true);
+    if (!nomeValido) {
+      toast.error("Informe seu nome completo");
+      return;
+    }
+    if (!telefoneValido) {
+      toast.error("Informe um telefone/WhatsApp válido");
       return;
     }
     if (modalidade === "delivery" && (!rua || !numero || !bairro)) {
@@ -449,6 +469,11 @@ export default function Checkout() {
       toast.error("Confirme o cálculo do frete antes de finalizar");
       return;
     }
+    if (precisaConfirmarEndereco) {
+      toast.error("Confirme seu endereço no mapa antes de finalizar");
+      return;
+    }
+
     const isOnline = metodo !== "na_entrega" && metodo !== "dinheiro";
     if (isOnline) {
       if (!isValidEmail(email)) {
