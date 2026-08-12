@@ -73,7 +73,10 @@ export default function Checkout() {
   const { itens, subtotal, limpar } = useCarrinho();
 
   const [nome, setNome] = useState("");
+  const [ddi, setDdi] = useState(DDI_PADRAO);
   const [telefone, setTelefone] = useState("");
+  const [tocouNome, setTocouNome] = useState(false);
+  const [tocouTelefone, setTocouTelefone] = useState(false);
   const [email, setEmail] = useState("");
   const [cpf, setCpf] = useState("");
   const [modalidade, setModalidade] = useState<Modalidade>("delivery");
@@ -89,7 +92,9 @@ export default function Checkout() {
 
   const [loadingCep, setLoadingCep] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  const [mostrarMapa, setMostrarMapa] = useState(false);
+  // Confirmação do pin no mapa é etapa obrigatória na entrega.
+  const [enderecoConfirmado, setEnderecoConfirmado] = useState(false);
+
 
   const [aguardando, setAguardando] = useState<null | {
     pedidoId: string;
