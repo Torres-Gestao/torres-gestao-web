@@ -574,19 +574,63 @@ export default function Checkout() {
             Seus dados
           </h3>
           <div>
-            <Label htmlFor="nome">Nome completo</Label>
-            <Input id="nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+            <Label htmlFor="nome">
+              Nome completo <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="nome"
+              value={nome}
+              required
+              aria-required="true"
+              aria-invalid={tocouNome && !nomeValido}
+              onChange={(e) => setNome(e.target.value)}
+              onBlur={() => setTocouNome(true)}
+            />
+            {tocouNome && !nomeValido && (
+              <p className="mt-1 text-xs text-red-600">Informe seu nome (mínimo 3 letras).</p>
+            )}
           </div>
           <div>
-            <Label htmlFor="tel">WhatsApp / Telefone</Label>
-            <Input
-              id="tel"
-              value={telefone}
-              onChange={(e) => setTelefone(formatPhone(e.target.value))}
-              placeholder="(00) 00000-0000"
-              inputMode="tel"
-            />
+            <Label htmlFor="tel">
+              WhatsApp / Telefone <span className="text-red-500">*</span>
+            </Label>
+            <div className="flex gap-2">
+              <select
+                aria-label="País (DDI)"
+                className="h-10 w-[120px] shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+                value={ddi}
+                onChange={(e) => {
+                  setDdi(e.target.value);
+                  setTelefone("");
+                }}
+              >
+                {PAISES.map((p) => (
+                  <option key={`${p.ddi}-${p.nome}`} value={p.ddi}>
+                    {p.bandeira} +{p.ddi}
+                  </option>
+                ))}
+              </select>
+              <Input
+                id="tel"
+                value={telefone}
+                required
+                aria-required="true"
+                aria-invalid={tocouTelefone && !telefoneValido}
+                onChange={(e) => setTelefone(formatTelefoneLocal(ddi, e.target.value))}
+                onBlur={() => setTocouTelefone(true)}
+                placeholder={ddi === DDI_PADRAO ? "(00) 00000-0000" : "Número sem o DDI"}
+                inputMode="tel"
+              />
+            </div>
+            {tocouTelefone && !telefoneValido && (
+              <p className="mt-1 text-xs text-red-600">
+                {ddi === DDI_PADRAO
+                  ? "Informe um telefone válido com DDD."
+                  : "Informe um número válido para o país escolhido."}
+              </p>
+            )}
           </div>
+
           <div>
             <Label htmlFor="email">
               Email {metodoOnlineSelecionado && <span className="text-red-500">*</span>}
