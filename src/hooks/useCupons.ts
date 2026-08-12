@@ -28,9 +28,13 @@ export function useCupons({ lojaId, itens, subtotal, taxaEntrega, telefone }: Pa
   const [validando, setValidando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [usos, setUsos] = useState<Record<string, UsosCupom>>({});
-  const [primeiraCompra, setPrimeiraCompra] = useState(true);
+  // Só sabemos que é primeira compra depois de consultar; antes disso
+  // tratamos como "ainda não elegível" para não mostrar desconto que some.
+  const [primeiraCompra, setPrimeiraCompra] = useState(false);
   const telefoneRef = useRef(telefone);
   telefoneRef.current = telefone;
+  // Evita refazer a mesma contagem para o par (cupom, telefone).
+  const contagensFeitas = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!lojaId) return;
@@ -48,6 +52,7 @@ export function useCupons({ lojaId, itens, subtotal, taxaEntrega, telefone }: Pa
       ativo = false;
     };
   }, [lojaId]);
+
 
   const ctxBase = useMemo<Omit<CupomCtx, "dataHora">>(
     () => ({
