@@ -93,35 +93,69 @@ export function useCupons({ lojaId, itens, subtotal, taxaEntrega, telefone }: Pa
     return combinar(candidatos, ctx);
   }, [automaticos, codigoAplicado, cupons, ctxBase]);
 
-  // Busca contadores necessários para validar limites e primeira compra.
-  const carregarContadores = useCallback(
-    async (cupomId: string) => {
-      const tel = telefoneRef.current || null;
+  // Conta usos de um cupom (total e do cliente atual) via RPC security definer.
+  const contarUsos = useCallback(async (cupomId: string): Promise<UsosCupom> => {
+    const tel = telefoneRef.current || null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase.rpc as any)("contar_usos_cupom", {
+      p_cupom_id: cupomId,
+      p_telefone: tel,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = ((data as any[] | null) ?? [])[0];
+    const u: UsosCupom = {
+      total: Number(row?.total ?? 0),
+      doCliente: Number(row?.do_cliente ?? 0),
+    };
+    contagensFeitas.current.add(`${cupomId}|${tel ?? ""}`);
+    setUsos((prev) => ({ ...prev, [cupomId]: u }));
+    return u;
+  }, []);
+
+  // Primeira compra depende só do telefone: consulta uma vez por telefone válido.
+  useEffect(() => {
+    const tel = telefone;
+    if (!lojaId || tel.length < 8) {
+      setPrimeiraCompra(false);
+      return;
+    }
+    let ativo = true;
+    const t = window.setTimeout(async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase.rpc as any)("contar_usos_cupom", {
-        p_cupom_id: cupomId,
+      const { data } = await (supabase.rpc as any)("contar_pedidos_cliente", {
+        p_loja_id: lojaId,
         p_telefone: tel,
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const row = ((data as any[] | null) ?? [])[0];
-      const u: UsosCupom = {
-        total: Number(row?.total ?? 0),
-        doCliente: Number(row?.do_cliente ?? 0),
-      };
-      setUsos((prev) => ({ ...prev, [cupomId]: u }));
+      if (ativo) setPrimeiraCompra(Number(data ?? 0) === 0);
+    }, 500);
+    return () => {
+      ativo = false;
+      window.clearTimeout(t);
+    };
+  }, [lojaId, telefone]);
 
-      if (tel) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: qtd } = await (supabase.rpc as any)("contar_pedidos_cliente", {
-          p_loja_id: lojaId,
-          p_telefone: tel,
-        });
-        setPrimeiraCompra(Number(qtd ?? 0) === 0);
-      }
-      return u;
-    },
-    [lojaId],
-  );
+  // Promoções automáticas com limite também precisam dos contadores,
+  // senão o limite nunca bloqueia (o motor assumiria "sem usos").
+  useEffect(() => {
+    const comLimite = automaticos.filter(
+      (c) => Number(c.limite_uso_total ?? 0) > 0 || c.tem_limite_por_cliente,
+    );
+    if (comLimite.length === 0) return;
+    let ativo = true;
+    const t = window.setTimeout(() => {
+      comLimite.forEach((c) => {
+        const chave = `${c.id}|${telefone || ""}`;
+        if (contagensFeitas.current.has(chave)) return;
+        contagensFeitas.current.add(chave);
+        if (ativo) void contarUsos(c.id);
+      });
+    }, 500);
+    return () => {
+      ativo = false;
+      window.clearTimeout(t);
+    };
+  }, [automaticos, telefone, contarUsos]);
+
 
   const aplicarCodigo = useCallback(
     async (codigoBruto: string): Promise<boolean> => {
