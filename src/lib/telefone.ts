@@ -20,7 +20,6 @@ export const PAISES: Pais[] = [
   { ddi: "41", nome: "Suíça", bandeira: "🇨🇭" },
   { ddi: "31", nome: "Holanda", bandeira: "🇳🇱" },
   { ddi: "32", nome: "Bélgica", bandeira: "🇧🇪" },
-  { ddi: "351", nome: "Portugal (Madeira)", bandeira: "🇵🇹" },
   { ddi: "54", nome: "Argentina", bandeira: "🇦🇷" },
   { ddi: "56", nome: "Chile", bandeira: "🇨🇱" },
   { ddi: "57", nome: "Colômbia", bandeira: "🇨🇴" },
