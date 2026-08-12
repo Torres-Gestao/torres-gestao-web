@@ -412,6 +412,11 @@ export default function Checkout() {
     [itens, produtoCategoria],
   );
 
+  const coordAtual: LatLng | null =
+    freteState.kind === "ok" || freteState.kind === "precisa_confirmar"
+      ? (freteState as { coord: LatLng }).coord
+      : null;
+
   // Telefone sempre gravado em E.164 sem "+" (ex.: 5562999998888).
   const telefoneNormalizado = telefoneE164(ddi, telefone);
   const telefoneValido = isTelefoneValido(ddi, telefone);
