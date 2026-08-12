@@ -579,10 +579,6 @@ export default function Checkout() {
   ];
   const metodoOnlineSelecionado = metodo !== "na_entrega" && metodo !== "dinheiro";
 
-  const coordAtual: LatLng | null =
-    freteState.kind === "ok" || freteState.kind === "precisa_confirmar"
-      ? (freteState as { coord: LatLng }).coord
-      : null;
 
   return (
     <div className="pb-10">
