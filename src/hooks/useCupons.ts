@@ -172,7 +172,7 @@ export function useCupons({ lojaId, itens, subtotal, taxaEntrega, telefone }: Pa
           setErro(MENSAGENS.inexistente);
           return false;
         }
-        const u = await carregarContadores(cupom.id);
+        const u = await contarUsos(cupom.id);
         const ctx: CupomCtx = {
           ...ctxBase,
           usos: { ...ctxBase.usos, [cupom.id]: u },
@@ -189,7 +189,7 @@ export function useCupons({ lojaId, itens, subtotal, taxaEntrega, telefone }: Pa
         setValidando(false);
       }
     },
-    [cupons, ctxBase, carregarContadores],
+    [cupons, ctxBase, contarUsos],
   );
 
   const remover = useCallback(() => {
