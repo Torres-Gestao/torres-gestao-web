@@ -11,9 +11,16 @@ import type {
 } from "@/types/db";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import { supabase } from "@/lib/supabase";
-import { brl, formatPhone, onlyDigits } from "@/lib/money";
+import { brl, onlyDigits } from "@/lib/money";
 import { buscarCep, formatCep } from "@/lib/cep";
 import { formatCpf, isValidCpf, isValidEmail } from "@/lib/validators";
+import {
+  DDI_PADRAO,
+  PAISES,
+  formatTelefoneLocal,
+  isTelefoneValido,
+  telefoneE164,
+} from "@/lib/telefone";
 import { useFreteFaixas, type CalculoFrete } from "@/hooks/useFreteFaixas";
 import { useCupons } from "@/hooks/useCupons";
 
@@ -66,7 +73,10 @@ export default function Checkout() {
   const { itens, subtotal, limpar } = useCarrinho();
 
   const [nome, setNome] = useState("");
+  const [ddi, setDdi] = useState(DDI_PADRAO);
   const [telefone, setTelefone] = useState("");
+  const [tocouNome, setTocouNome] = useState(false);
+  const [tocouTelefone, setTocouTelefone] = useState(false);
   const [email, setEmail] = useState("");
   const [cpf, setCpf] = useState("");
   const [modalidade, setModalidade] = useState<Modalidade>("delivery");
@@ -82,7 +92,9 @@ export default function Checkout() {
 
   const [loadingCep, setLoadingCep] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  const [mostrarMapa, setMostrarMapa] = useState(false);
+  // Confirmação do pin no mapa é etapa obrigatória na entrega.
+  const [enderecoConfirmado, setEnderecoConfirmado] = useState(false);
+
 
   const [aguardando, setAguardando] = useState<null | {
     pedidoId: string;
@@ -192,7 +204,6 @@ export default function Checkout() {
       // Cai no modo manual: pedir pra confirmar no mapa, centrando na loja.
       const centro = lojaCoord ?? { lat: -14.235, lng: -51.9253 };
       setFreteState({ kind: "precisa_confirmar", coord: centro });
-      setMostrarMapa(true);
       return;
     }
     setFreteState(aplicarCalculo(coord));
@@ -200,6 +211,8 @@ export default function Checkout() {
 
   // Debounce: recalcula quando os campos essenciais mudam.
   useEffect(() => {
+    // Endereço mudou → confirmação anterior deixa de valer.
+    setEnderecoConfirmado(false);
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       recalcular();
@@ -212,10 +225,12 @@ export default function Checkout() {
 
   function handlePinMove(lat: number, lng: number) {
     const coord = { lat, lng };
+    setEnderecoConfirmado(false);
     setFreteState({ kind: "calculando" });
     // Cálculo é síncrono após termos coord confirmado.
     setTimeout(() => setFreteState(aplicarCalculo(coord)), 100);
   }
+
 
   // ---------- Tela de espera do pagamento ----------
   if (aguardando) {
@@ -397,12 +412,22 @@ export default function Checkout() {
     [itens, produtoCategoria],
   );
 
+  const coordAtual: LatLng | null =
+    freteState.kind === "ok" || freteState.kind === "precisa_confirmar"
+      ? (freteState as { coord: LatLng }).coord
+      : null;
+
+  // Telefone sempre gravado em E.164 sem "+" (ex.: 5562999998888).
+  const telefoneNormalizado = telefoneE164(ddi, telefone);
+  const telefoneValido = isTelefoneValido(ddi, telefone);
+  const nomeValido = nome.trim().length >= 3;
+
   const cupons = useCupons({
     lojaId: loja.id,
     itens: itensCupom,
     subtotal,
     taxaEntrega: taxaEntregaBruta,
-    telefone: onlyDigits(telefone),
+    telefone: telefoneValido ? telefoneNormalizado : "",
   });
 
   const { descontoProdutos, descontoEntrega, entregaGratis, aplicados, principal } =
@@ -420,10 +445,25 @@ export default function Checkout() {
       freteState.kind === "precisa_confirmar" ||
       freteState.kind === "idle");
 
+  // Confirmação do pin é obrigatória sempre que o mapa está disponível na entrega.
+  const precisaConfirmarEndereco =
+    modalidade === "delivery" &&
+    freteHabilitado &&
+    !!loja.mapbox_public_token &&
+    !!coordAtual &&
+    !enderecoConfirmado;
+
+  const bloqueadoDados = !nomeValido || !telefoneValido;
 
   async function enviar() {
-    if (!nome.trim() || !telefone.trim()) {
-      toast.error("Preencha seu nome e telefone");
+    setTocouNome(true);
+    setTocouTelefone(true);
+    if (!nomeValido) {
+      toast.error("Informe seu nome completo");
+      return;
+    }
+    if (!telefoneValido) {
+      toast.error("Informe um telefone/WhatsApp válido");
       return;
     }
     if (modalidade === "delivery" && (!rua || !numero || !bairro)) {
@@ -434,6 +474,11 @@ export default function Checkout() {
       toast.error("Confirme o cálculo do frete antes de finalizar");
       return;
     }
+    if (precisaConfirmarEndereco) {
+      toast.error("Confirme seu endereço no mapa antes de finalizar");
+      return;
+    }
+
     const isOnline = metodo !== "na_entrega" && metodo !== "dinheiro";
     if (isOnline) {
       if (!isValidEmail(email)) {
@@ -539,10 +584,6 @@ export default function Checkout() {
   ];
   const metodoOnlineSelecionado = metodo !== "na_entrega" && metodo !== "dinheiro";
 
-  const coordAtual: LatLng | null =
-    freteState.kind === "ok" || freteState.kind === "precisa_confirmar"
-      ? (freteState as { coord: LatLng }).coord
-      : null;
 
   return (
     <div className="pb-10">
@@ -559,19 +600,63 @@ export default function Checkout() {
             Seus dados
           </h3>
           <div>
-            <Label htmlFor="nome">Nome completo</Label>
-            <Input id="nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+            <Label htmlFor="nome">
+              Nome completo <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="nome"
+              value={nome}
+              required
+              aria-required="true"
+              aria-invalid={tocouNome && !nomeValido}
+              onChange={(e) => setNome(e.target.value)}
+              onBlur={() => setTocouNome(true)}
+            />
+            {tocouNome && !nomeValido && (
+              <p className="mt-1 text-xs text-red-600">Informe seu nome (mínimo 3 letras).</p>
+            )}
           </div>
           <div>
-            <Label htmlFor="tel">WhatsApp / Telefone</Label>
-            <Input
-              id="tel"
-              value={telefone}
-              onChange={(e) => setTelefone(formatPhone(e.target.value))}
-              placeholder="(00) 00000-0000"
-              inputMode="tel"
-            />
+            <Label htmlFor="tel">
+              WhatsApp / Telefone <span className="text-red-500">*</span>
+            </Label>
+            <div className="flex gap-2">
+              <select
+                aria-label="País (DDI)"
+                className="h-10 w-[120px] shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+                value={ddi}
+                onChange={(e) => {
+                  setDdi(e.target.value);
+                  setTelefone("");
+                }}
+              >
+                {PAISES.map((p) => (
+                  <option key={`${p.ddi}-${p.nome}`} value={p.ddi}>
+                    {p.bandeira} +{p.ddi}
+                  </option>
+                ))}
+              </select>
+              <Input
+                id="tel"
+                value={telefone}
+                required
+                aria-required="true"
+                aria-invalid={tocouTelefone && !telefoneValido}
+                onChange={(e) => setTelefone(formatTelefoneLocal(ddi, e.target.value))}
+                onBlur={() => setTocouTelefone(true)}
+                placeholder={ddi === DDI_PADRAO ? "(00) 00000-0000" : "Número sem o DDI"}
+                inputMode="tel"
+              />
+            </div>
+            {tocouTelefone && !telefoneValido && (
+              <p className="mt-1 text-xs text-red-600">
+                {ddi === DDI_PADRAO
+                  ? "Informe um telefone válido com DDD."
+                  : "Informe um número válido para o país escolhido."}
+              </p>
+            )}
           </div>
+
           <div>
             <Label htmlFor="email">
               Email {metodoOnlineSelecionado && <span className="text-red-500">*</span>}
@@ -706,16 +791,7 @@ export default function Checkout() {
                         <MapPin className="h-4 w-4" style={{ color: brand }} />
                         Frete ({freteState.km.toFixed(1)} km)
                       </span>
-                      <div className="flex items-center gap-3">
-                        <span className="font-semibold">{brl(freteState.valor)}</span>
-                        <button
-                          type="button"
-                          onClick={() => setMostrarMapa((v) => !v)}
-                          className="text-xs underline text-muted-foreground"
-                        >
-                          {mostrarMapa ? "Ocultar mapa" : "Ajustar no mapa"}
-                        </button>
-                      </div>
+                      <span className="font-semibold">{brl(freteState.valor)}</span>
                     </div>
                   )}
                   {freteState.kind === "fora_area" && (
@@ -746,11 +822,23 @@ export default function Checkout() {
                 </div>
               )}
 
-              {/* Mapa */}
-              {freteHabilitado &&
-                loja.mapbox_public_token &&
-                coordAtual &&
-                (mostrarMapa || freteState.kind === "precisa_confirmar") && (
+              {/* Confirmação de endereço — etapa obrigatória na entrega */}
+              {freteHabilitado && loja.mapbox_public_token && coordAtual && (
+                <div className="space-y-2 rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">
+                      Confirmação de endereço <span className="text-red-500">*</span>
+                    </p>
+                    {enderecoConfirmado && (
+                      <span className="text-xs font-medium" style={{ color: brand }}>
+                        Endereço confirmado
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Arraste o pin até a porta exata da entrega e confirme. Isso evita erro de
+                    localização e cobrança de frete errada.
+                  </p>
                   <MapaConfirmacao
                     token={loja.mapbox_public_token}
                     lat={coordAtual.lat}
@@ -758,7 +846,21 @@ export default function Checkout() {
                     onChange={handlePinMove}
                     brand={loja.cor_primaria ?? "#6B21A8"}
                   />
-                )}
+                  <Button
+                    type="button"
+                    variant={enderecoConfirmado ? "outline" : "default"}
+                    className="w-full"
+                    style={
+                      enderecoConfirmado ? undefined : { backgroundColor: brand, color: "#fff" }
+                    }
+                    disabled={freteState.kind === "calculando" || enderecoConfirmado}
+                    onClick={() => setEnderecoConfirmado(true)}
+                  >
+                    {enderecoConfirmado ? "Local confirmado" : "Confirmar este local"}
+                  </Button>
+                </div>
+              )}
+
             </div>
           )}
         </section>
