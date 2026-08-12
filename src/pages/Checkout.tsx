@@ -11,9 +11,16 @@ import type {
 } from "@/types/db";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import { supabase } from "@/lib/supabase";
-import { brl, formatPhone, onlyDigits } from "@/lib/money";
+import { brl, onlyDigits } from "@/lib/money";
 import { buscarCep, formatCep } from "@/lib/cep";
 import { formatCpf, isValidCpf, isValidEmail } from "@/lib/validators";
+import {
+  DDI_PADRAO,
+  PAISES,
+  formatTelefoneLocal,
+  isTelefoneValido,
+  telefoneE164,
+} from "@/lib/telefone";
 import { useFreteFaixas, type CalculoFrete } from "@/hooks/useFreteFaixas";
 import { useCupons } from "@/hooks/useCupons";
 
