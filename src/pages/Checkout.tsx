@@ -765,16 +765,7 @@ export default function Checkout() {
                         <MapPin className="h-4 w-4" style={{ color: brand }} />
                         Frete ({freteState.km.toFixed(1)} km)
                       </span>
-                      <div className="flex items-center gap-3">
-                        <span className="font-semibold">{brl(freteState.valor)}</span>
-                        <button
-                          type="button"
-                          onClick={() => setMostrarMapa((v) => !v)}
-                          className="text-xs underline text-muted-foreground"
-                        >
-                          {mostrarMapa ? "Ocultar mapa" : "Ajustar no mapa"}
-                        </button>
-                      </div>
+                      <span className="font-semibold">{brl(freteState.valor)}</span>
                     </div>
                   )}
                   {freteState.kind === "fora_area" && (
@@ -805,11 +796,23 @@ export default function Checkout() {
                 </div>
               )}
 
-              {/* Mapa */}
-              {freteHabilitado &&
-                loja.mapbox_public_token &&
-                coordAtual &&
-                (mostrarMapa || freteState.kind === "precisa_confirmar") && (
+              {/* Confirmação de endereço — etapa obrigatória na entrega */}
+              {freteHabilitado && loja.mapbox_public_token && coordAtual && (
+                <div className="space-y-2 rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">
+                      Confirmação de endereço <span className="text-red-500">*</span>
+                    </p>
+                    {enderecoConfirmado && (
+                      <span className="text-xs font-medium" style={{ color: brand }}>
+                        Endereço confirmado
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Arraste o pin até a porta exata da entrega e confirme. Isso evita erro de
+                    localização e cobrança de frete errada.
+                  </p>
                   <MapaConfirmacao
                     token={loja.mapbox_public_token}
                     lat={coordAtual.lat}
@@ -817,7 +820,21 @@ export default function Checkout() {
                     onChange={handlePinMove}
                     brand={loja.cor_primaria ?? "#6B21A8"}
                   />
-                )}
+                  <Button
+                    type="button"
+                    variant={enderecoConfirmado ? "outline" : "default"}
+                    className="w-full"
+                    style={
+                      enderecoConfirmado ? undefined : { backgroundColor: brand, color: "#fff" }
+                    }
+                    disabled={freteState.kind === "calculando" || enderecoConfirmado}
+                    onClick={() => setEnderecoConfirmado(true)}
+                  >
+                    {enderecoConfirmado ? "Local confirmado" : "Confirmar este local"}
+                  </Button>
+                </div>
+              )}
+
             </div>
           )}
         </section>
