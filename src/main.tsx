@@ -7,6 +7,9 @@ import { Toaster } from "sonner";
 import "./styles.css";
 import App from "./App";
 import { TenantProvider } from "./hooks/useTenant";
+import { registrarServiceWorker } from "./lib/pwa-register";
+
+registrarServiceWorker();
 
 const queryClient = new QueryClient({
   defaultOptions: {
