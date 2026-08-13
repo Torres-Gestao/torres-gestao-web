@@ -27,9 +27,8 @@ function ehStandalone() {
 function ehIOS() {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
-  return /iPad|iPhone|iPod/.test(ua) && !/CriOS|FxiOS/.test(ua) === false
-    ? /iPad|iPhone|iPod/.test(ua)
-    : /iPad|iPhone|iPod/.test(ua);
+  const iPadOS = navigator.maxTouchPoints > 1 && /Macintosh/.test(ua);
+  return /iPad|iPhone|iPod/.test(ua) || iPadOS;
 }
 
 /**
