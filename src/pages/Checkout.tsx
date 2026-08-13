@@ -1011,23 +1011,32 @@ export default function Checkout() {
         <Button
           className="h-12 w-full text-base"
           style={{ backgroundColor: "var(--brand-primary, #6B21A8)" }}
-          disabled={enviando || metodosDisponiveis.length === 0 || bloqueadoPorFrete}
+          disabled={
+            enviando ||
+            metodosDisponiveis.length === 0 ||
+            bloqueadoPorFrete ||
+            bloqueadoDados ||
+            precisaConfirmarEndereco
+          }
           onClick={enviar}
         >
           {enviando ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : freteState.kind === "calculando" ? (
             "Calculando frete…"
-          ) : freteState.kind === "precisa_confirmar" ? (
-            "Confirme o endereço no mapa"
+          ) : bloqueadoDados ? (
+            "Preencha nome e telefone"
           ) : freteState.kind === "fora_area" ? (
             "Fora da área de entrega"
+          ) : precisaConfirmarEndereco || freteState.kind === "precisa_confirmar" ? (
+            "Confirme o endereço no mapa"
           ) : metodoOnlineSelecionado ? (
             "Ir para o pagamento"
           ) : (
             "Finalizar Pedido"
           )}
         </Button>
+
       </div>
     </div>
   );
