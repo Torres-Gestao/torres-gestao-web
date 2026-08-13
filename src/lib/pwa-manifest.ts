@@ -16,27 +16,92 @@ function abs(path: string) {
   return new URL(path, window.location.origin).href;
 }
 
-function tipoDaImagem(url: string): string {
-  const limpa = url.split("?")[0].toLowerCase();
-  if (limpa.endsWith(".jpg") || limpa.endsWith(".jpeg")) return "image/jpeg";
-  if (limpa.endsWith(".webp")) return "image/webp";
-  if (limpa.endsWith(".svg")) return "image/svg+xml";
-  return "image/png";
+/**
+ * Transforma a logo da loja num PNG quadrado (data URL) do tamanho pedido.
+ * A logo é centralizada e "encaixada" sem distorcer, com fundo da cor da loja.
+ * Retorna null se a imagem não puder ser lida (CORS, 404, etc).
+ */
+function logoQuadrada(url: string, tamanho: number, fundo: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = tamanho;
+        canvas.height = tamanho;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(null);
+
+        ctx.fillStyle = fundo;
+        ctx.fillRect(0, 0, tamanho, tamanho);
+
+        // ~12% de respiro nas bordas (bom para ícone maskable também)
+        const area = tamanho * 0.76;
+        const escala = Math.min(area / img.width, area / img.height);
+        const w = img.width * escala;
+        const h = img.height * escala;
+        ctx.drawImage(img, (tamanho - w) / 2, (tamanho - h) / 2, w, h);
+
+        resolve(canvas.toDataURL("image/png"));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
 }
 
-export function aplicarManifestDaLoja(loja: ManifestLoja) {
+function trocarLink(rel: string, href: string, type?: string) {
+  let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = rel;
+    document.head.appendChild(link);
+  }
+  if (type) link.type = type;
+  link.href = href;
+}
+
+export async function aplicarManifestDaLoja(loja: ManifestLoja) {
   if (typeof document === "undefined") return;
 
   const escopo = loja.dominioProprio ? "/" : `/${loja.slug ?? ""}`;
   const cor = loja.corPrimaria || "#6B21A8";
 
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (meta) meta.content = cor;
+
+  const apple = document.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]');
+  if (apple) apple.content = loja.nome;
+
+  document.title = `${loja.nome} | Cardápio Digital`;
+
+  // Ícones: logo da loja convertida em PNG quadrado (o Android/iOS exigem quadrado).
   const icones: Record<string, string>[] = [];
   if (loja.logoUrl) {
-    const tipo = tipoDaImagem(loja.logoUrl);
-    icones.push(
-      { src: loja.logoUrl, sizes: "192x192", type: tipo, purpose: "any" },
-      { src: loja.logoUrl, sizes: "512x512", type: tipo, purpose: "any" },
-    );
+    const [i192, i512] = await Promise.all([
+      logoQuadrada(loja.logoUrl, 192, "#ffffff"),
+      logoQuadrada(loja.logoUrl, 512, "#ffffff"),
+    ]);
+    if (i192) icones.push({ src: i192, sizes: "192x192", type: "image/png", purpose: "any" });
+    if (i512) {
+      icones.push(
+        { src: i512, sizes: "512x512", type: "image/png", purpose: "any" },
+        { src: i512, sizes: "512x512", type: "image/png", purpose: "maskable" },
+      );
+      // iOS ignora o manifest: o ícone da home screen vem do apple-touch-icon.
+      trocarLink("apple-touch-icon", i512);
+      trocarLink("icon", i512, "image/png");
+    } else {
+      // Sem CORS na logo: ainda assim tenta usar a URL direta.
+      icones.push(
+        { src: loja.logoUrl, sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: loja.logoUrl, sizes: "512x512", type: "image/png", purpose: "any" },
+      );
+      trocarLink("apple-touch-icon", loja.logoUrl);
+    }
   }
   // Fallback sempre presente (garante instalabilidade mesmo sem logo/CORS).
   icones.push(
@@ -60,6 +125,9 @@ export function aplicarManifestDaLoja(loja: ManifestLoja) {
     icons: icones,
   };
 
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" }),
+  );
   const link =
     document.querySelector<HTMLLinkElement>('link[rel="manifest"]') ??
     (() => {
@@ -68,21 +136,7 @@ export function aplicarManifestDaLoja(loja: ManifestLoja) {
       document.head.appendChild(l);
       return l;
     })();
-
-  const url = URL.createObjectURL(
-    new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" }),
-  );
   link.href = url;
   if (blobAtual) URL.revokeObjectURL(blobAtual);
   blobAtual = url;
-
-  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  if (meta) meta.content = cor;
-
-  const apple = document.querySelector<HTMLMetaElement>(
-    'meta[name="apple-mobile-web-app-title"]',
-  );
-  if (apple) apple.content = loja.nome;
-
-  document.title = `${loja.nome} | Cardápio Digital`;
 }
