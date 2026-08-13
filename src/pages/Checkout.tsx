@@ -140,6 +140,19 @@ export default function Checkout() {
     };
   }, [loja.id]);
 
+  // Meta Pixel: início de checkout (uma vez, ao entrar na tela com carrinho).
+  const initiateEnviado = useRef(false);
+  useEffect(() => {
+    if (initiateEnviado.current || itens.length === 0) return;
+    initiateEnviado.current = true;
+    track("InitiateCheckout", {
+      num_items: itens.reduce((s, i) => s + i.quantidade, 0),
+      content_ids: itens.map((i) => i.produto_id),
+      contents: itens.map((i) => ({ id: i.produto_id, quantity: i.quantidade })),
+      value: subtotal,
+    });
+  }, [itens, subtotal]);
+
   const brand = "var(--brand-primary, #6B21A8)";
 
   // Mapa produto -> categoria (usado pelos cupons com escopo por itens/categorias).
