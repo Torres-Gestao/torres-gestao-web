@@ -10,7 +10,12 @@ comment on column public.lojas.meta_pixel_id is
   'ID do Meta Pixel (Facebook/Instagram) do lojista. Null = sem rastreamento.';
 
 -- ---------- View pública (marketplace) -------------------------------------
-create or replace view public.lojas_publicas as
+-- DROP + CREATE é necessário porque adicionamos meta_pixel_id no meio das
+-- colunas; CREATE OR REPLACE VIEW não consegue reordenar/reidentificar as
+-- colunas existentes e gera erro 42P16.
+drop view if exists public.lojas_publicas;
+
+create view public.lojas_publicas as
 select
   l.id,
   l.slug,
