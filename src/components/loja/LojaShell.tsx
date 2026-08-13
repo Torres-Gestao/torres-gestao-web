@@ -1,5 +1,6 @@
-import { Outlet, useNavigate, useParams } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useEffect } from "react";
+import { initMetaPixel, trackPageView } from "@/lib/meta-pixel";
 import { useLoja } from "@/hooks/useLoja";
 import { useTenant } from "@/hooks/useTenant";
 import { useCarrinho } from "@/hooks/useCarrinho";

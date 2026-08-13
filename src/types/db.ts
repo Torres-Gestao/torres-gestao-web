@@ -17,6 +17,7 @@ export interface LojaPublica {
   longitude: number | null;
   frete_ativo: boolean | null;
   raio_max_km: number | null;
+  meta_pixel_id?: string | null;
 }
 
 
@@ -37,6 +38,8 @@ export interface Loja {
   longitude: number | null;
   mapbox_public_token: string | null;
   frete_ativo: boolean | null;
+  // Meta Pixel por loja (migration 010)
+  meta_pixel_id: string | null;
 }
 
 export interface FreteFaixa {
