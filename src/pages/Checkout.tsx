@@ -502,7 +502,7 @@ export default function Checkout() {
     setEnviando(true);
 
     try {
-      const telefoneDigits = onlyDigits(telefone);
+      const telefoneDigits = telefoneNormalizado;
       const cliente = await upsertCliente(telefoneDigits);
       const novoPedidoId = crypto.randomUUID();
 
