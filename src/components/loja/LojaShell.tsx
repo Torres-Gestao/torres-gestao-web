@@ -1,5 +1,6 @@
-import { Outlet, useNavigate, useParams } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useEffect } from "react";
+import { initMetaPixel, trackPageView } from "@/lib/meta-pixel";
 import { useLoja } from "@/hooks/useLoja";
 import { useTenant } from "@/hooks/useTenant";
 import { useCarrinho } from "@/hooks/useCarrinho";
@@ -21,10 +22,22 @@ export default function LojaShell() {
   } = useLoja(isCustomDomain ? undefined : slug);
   const loja = isCustomDomain ? lojaTenant : (lojaSlug ?? null);
   const { setSlug } = useCarrinho();
+  const location = useLocation();
 
   useEffect(() => {
     if (loja?.slug) setSlug(loja.slug);
   }, [loja?.slug, setSlug]);
+
+  // Meta Pixel da loja acessada (nada é carregado se a loja não tiver pixel).
+  useEffect(() => {
+    initMetaPixel(loja?.meta_pixel_id ?? null);
+  }, [loja?.meta_pixel_id]);
+
+  // SPA: cada troca de rota dentro da loja conta como PageView.
+  useEffect(() => {
+    if (!loja?.meta_pixel_id) return;
+    trackPageView();
+  }, [location.pathname, loja?.meta_pixel_id]);
 
   // Manifest PWA por loja: instala com nome, logo e cor da loja acessada.
   useEffect(() => {

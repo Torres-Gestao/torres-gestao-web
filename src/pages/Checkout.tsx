@@ -25,6 +25,7 @@ import { useFreteFaixas, type CalculoFrete } from "@/hooks/useFreteFaixas";
 import { useCupons } from "@/hooks/useCupons";
 
 import { getTracking, type TrackingData } from "@/hooks/useTracking";
+import { track, trackPurchaseOnce } from "@/lib/meta-pixel";
 import { geocodeEndereco, haversineKm, type LatLng } from "@/lib/mapbox";
 import MapaConfirmacao from "@/components/loja/MapaConfirmacao";
 import { Button } from "@/components/ui/button";
@@ -138,6 +139,19 @@ export default function Checkout() {
       ativo = false;
     };
   }, [loja.id]);
+
+  // Meta Pixel: início de checkout (uma vez, ao entrar na tela com carrinho).
+  const initiateEnviado = useRef(false);
+  useEffect(() => {
+    if (initiateEnviado.current || itens.length === 0) return;
+    initiateEnviado.current = true;
+    track("InitiateCheckout", {
+      num_items: itens.reduce((s, i) => s + i.quantidade, 0),
+      content_ids: itens.map((i) => i.produto_id),
+      contents: itens.map((i) => ({ id: i.produto_id, quantity: i.quantidade })),
+      value: subtotal,
+    });
+  }, [itens, subtotal]);
 
   const brand = "var(--brand-primary, #6B21A8)";
 
@@ -558,6 +572,18 @@ export default function Checkout() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .insert(payload as any);
       if (error) throw error;
+
+      // Meta Pixel: Purchase com o total efetivamente cobrado (produtos + frete
+      // − desconto). Deduplicado por pedido e disparado ANTES do redirect ao
+      // gateway, para não perder o evento quando o cliente sai do site.
+      trackPurchaseOnce(novoPedidoId, {
+        value: total,
+        content_type: "product",
+        content_ids: itens.map((i) => i.produto_id),
+        contents: itens.map((i) => ({ id: i.produto_id, quantity: i.quantidade })),
+        num_items: itens.reduce((s, i) => s + i.quantidade, 0),
+        order_id: novoPedidoId,
+      });
 
       if (isOnline) {
         setAguardando({ pedidoId: novoPedidoId, status: "polling" });
