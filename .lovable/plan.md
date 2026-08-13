@@ -45,6 +45,7 @@ Loja sem `meta_pixel_id`: nada é injetado, zero requisição ao Facebook.
 - `initMetaPixel(pixelId)` — injeta o snippet oficial uma vez, inicializa e manda o primeiro `PageView`. Ignora chamadas repetidas e troca de loja já inicializada.
 - `track(evento, params)` — wrapper seguro: se o Pixel não estiver ativo, não faz nada; tudo em `try/catch`.
 - `trackPurchaseOnce(pedidoId, params)` — deduplicação por pedido.
+- `currency: 'BRL'` é injetado automaticamente pelo wrapper sempre que houver `value` (ViewContent, AddToCart, InitiateCheckout, Purchase) — a Meta rejeita/alerta quando o valor vai sem moeda.
 - Tipagem de `window.fbq` sem `any` solto.
 
 **`src/components/loja/LojaShell.tsx`**
