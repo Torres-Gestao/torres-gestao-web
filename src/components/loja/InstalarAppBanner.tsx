@@ -9,7 +9,7 @@ export default function InstalarAppBanner({ loja }: { loja: Loja }) {
   if (!podeMostrar) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-3 sm:px-4">
+    <div className="fixed inset-x-0 bottom-24 z-40 px-3 sm:px-4">
       <div
         className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-2xl px-4 py-3 text-white shadow-lg"
         style={{ background: `linear-gradient(135deg, ${cor} 0%, #111 160%)` }}

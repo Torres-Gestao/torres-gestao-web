@@ -5,6 +5,8 @@ import { useTenant } from "@/hooks/useTenant";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import LojaHeader from "./LojaHeader";
 import FloatingCart from "./FloatingCart";
+import InstalarAppBanner from "./InstalarAppBanner";
+import { aplicarManifestDaLoja } from "@/lib/pwa-manifest";
 import { Loader2 } from "lucide-react";
 
 export default function LojaShell() {
@@ -23,6 +25,18 @@ export default function LojaShell() {
   useEffect(() => {
     if (loja?.slug) setSlug(loja.slug);
   }, [loja?.slug, setSlug]);
+
+  // Manifest PWA por loja: instala com nome, logo e cor da loja acessada.
+  useEffect(() => {
+    if (!loja) return;
+    aplicarManifestDaLoja({
+      nome: loja.nome,
+      slug: loja.slug,
+      logoUrl: loja.logo_url,
+      corPrimaria: loja.cor_primaria,
+      dominioProprio: isCustomDomain,
+    });
+  }, [loja, isCustomDomain]);
 
   if (!isCustomDomain && isLoading) {
     return (
