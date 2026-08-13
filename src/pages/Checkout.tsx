@@ -573,6 +573,18 @@ export default function Checkout() {
         .insert(payload as any);
       if (error) throw error;
 
+      // Meta Pixel: Purchase com o total efetivamente cobrado (produtos + frete
+      // − desconto). Deduplicado por pedido e disparado ANTES do redirect ao
+      // gateway, para não perder o evento quando o cliente sai do site.
+      trackPurchaseOnce(novoPedidoId, {
+        value: total,
+        content_type: "product",
+        content_ids: itens.map((i) => i.produto_id),
+        contents: itens.map((i) => ({ id: i.produto_id, quantity: i.quantidade })),
+        num_items: itens.reduce((s, i) => s + i.quantidade, 0),
+        order_id: novoPedidoId,
+      });
+
       if (isOnline) {
         setAguardando({ pedidoId: novoPedidoId, status: "polling" });
         limpar();
