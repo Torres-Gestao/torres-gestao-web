@@ -25,6 +25,8 @@ export default defineConfig(({ mode }) => {
         includeAssets: ["favicon.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png"],
         workbox: {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+          // O bundle principal passa de 2 MiB (mapbox-gl); precisa entrar no precache.
+          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           navigateFallback: "/index.html",
           navigateFallbackDenylist: [/^\/~oauth/],
           cleanupOutdatedCaches: true,

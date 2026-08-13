@@ -71,6 +71,7 @@ export default function LojaShell() {
         <Outlet context={{ loja }} />
       </main>
       <FloatingCart slug={loja.slug} />
+      <InstalarAppBanner loja={loja} />
     </div>
   );
 }
