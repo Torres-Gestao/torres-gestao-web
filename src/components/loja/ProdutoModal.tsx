@@ -112,6 +112,13 @@ export default function ProdutoModal({ produto, onClose }: Props) {
       observacao: observacao || undefined,
       respostas: respostas.length ? respostas : undefined,
     });
+    track("AddToCart", {
+      content_type: "product",
+      content_ids: [produto.id],
+      content_name: produto.nome,
+      contents: [{ id: produto.id, quantity: quantidade }],
+      value: Number((quantidade * (Number(produto.preco) + adicionalTotal)).toFixed(2)),
+    });
     toast.success(`${quantidade}x ${produto.nome} adicionado`);
     onClose();
   }

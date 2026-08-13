@@ -25,6 +25,7 @@ import { useFreteFaixas, type CalculoFrete } from "@/hooks/useFreteFaixas";
 import { useCupons } from "@/hooks/useCupons";
 
 import { getTracking, type TrackingData } from "@/hooks/useTracking";
+import { track, trackPurchaseOnce } from "@/lib/meta-pixel";
 import { geocodeEndereco, haversineKm, type LatLng } from "@/lib/mapbox";
 import MapaConfirmacao from "@/components/loja/MapaConfirmacao";
 import { Button } from "@/components/ui/button";
