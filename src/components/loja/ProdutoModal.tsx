@@ -11,6 +11,7 @@ import { brl } from "@/lib/money";
 import { useCarrinho } from "@/hooks/useCarrinho";
 import { usePerguntas } from "@/hooks/useProdutos";
 import { opcoesAtivas, perguntasDoProduto } from "@/lib/perguntas";
+import { track } from "@/lib/meta-pixel";
 import { toast } from "sonner";
 
 interface Props {
@@ -35,6 +36,18 @@ export default function ProdutoModal({ produto, onClose }: Props) {
     setQuantidade(1);
     setObservacao("");
     setSelecoes({});
+  }, [produto?.id]);
+
+  // Meta Pixel: visualização de produto.
+  useEffect(() => {
+    if (!produto) return;
+    track("ViewContent", {
+      content_type: "product",
+      content_ids: [produto.id],
+      content_name: produto.nome,
+      value: Number(produto.preco),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produto?.id]);
 
   const adicionalTotal = useMemo(() => {
