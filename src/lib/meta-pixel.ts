@@ -55,7 +55,8 @@ export function initMetaPixel(pixelId: string | null | undefined): void {
     carregarScript();
     pixelAtivo = id;
     window.fbq?.("init", id);
-    window.fbq?.("track", "PageView");
+    // O PageView inicial é disparado pelo efeito de rota do LojaShell,
+    // evitando evento duplicado no primeiro render.
   } catch {
     // ignora
   }
