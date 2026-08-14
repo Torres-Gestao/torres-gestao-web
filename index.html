@@ -12,13 +12,36 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
 
-    <!-- PWA: manifest genérico (o app troca por um manifest da loja em runtime) -->
+    <!-- PWA: manifest genérico; o script abaixo troca pelo manifest da loja
+         ANTES do bundle, para o Chrome capturar o ícone certo na instalação. -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Cardápio Digital" />
+    <script>
+      (function () {
+        var h = window.location.hostname;
+        // Hosts sem Pages Functions (preview/dev): mantém o manifest estático.
+        if (
+          /localhost|127\.0\.0\.1|lovable|lovableproject|github\.io/.test(h)
+        )
+          return;
+        var plataforma = /\.pages\.dev$/.test(h) || /\.workers\.dev$/.test(h);
+        var slug = "_"; // domínio próprio: a function resolve pelo host
+        if (plataforma) {
+          var seg = window.location.pathname.split("/")[1] || "";
+          var reservado = ["carrinho", "checkout", "pedido", "ordem", "icon", "manifest", "~oauth"];
+          if (!seg || reservado.indexOf(seg) !== -1) return; // marketplace
+          slug = seg;
+        }
+        var m = document.querySelector('link[rel="manifest"]');
+        if (m) m.href = "/manifest/" + encodeURIComponent(slug);
+        var a = document.querySelector('link[rel="apple-touch-icon"]');
+        if (a) a.href = "/icon/" + encodeURIComponent(slug) + "?size=180";
+      })();
+    </script>
     <script>
       // Compatibilidade com links antigos do HashRouter (#/loja/carrinho -> /loja/carrinho).
       // Roda antes do bundle para o router já iniciar na rota certa.
