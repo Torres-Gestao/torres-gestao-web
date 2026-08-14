@@ -44,6 +44,10 @@ export default defineConfig(({ mode }) => {
             {
               urlPattern: ({ url, request }: { url: URL; request: Request }) =>
                 url.origin === self.location.origin &&
+                // manifest/ícone da loja são dinâmicos (Pages Functions):
+                // nunca cache-first, senão a logo trocada nunca aparece.
+                !url.pathname.startsWith("/icon/") &&
+                !url.pathname.startsWith("/manifest/") &&
                 (request.destination === "script" ||
                   request.destination === "style" ||
                   request.destination === "font" ||
