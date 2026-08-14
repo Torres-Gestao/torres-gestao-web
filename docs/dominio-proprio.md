@@ -44,3 +44,20 @@ bundle carregar, então links já impressos ou enviados por WhatsApp continuam f
 
 Meta tags e preview social por loja (title/og dinâmicos no HTML) exigiriam uma Pages Function
 injetando o meta no servidor. Hoje o `document.title` é ajustado no cliente.
+
+## Ícone do app instalado (PWA por loja)
+
+O manifest e o ícone são servidos por Pages Functions (pasta `functions/`):
+
+- `GET /manifest/{slug}` — manifest com nome, cor e ícones da loja.
+- `GET /icon/{slug}` — logo da loja servida pela própria origem (sem CORS).
+- Slug especial `_` = resolver a loja pelo host (domínios próprios).
+
+Variáveis necessárias no Cloudflare Pages (além das `VITE_*` de build):
+`SUPABASE_URL` e `SUPABASE_ANON_KEY` (as `VITE_*` também funcionam).
+
+O `index.html` já aponta `<link rel="manifest">` e `apple-touch-icon` para essas
+rotas no primeiro paint — antes disso o Chrome capturava o manifest genérico e o
+app instalava sempre com o ícone de fallback. Em hosts sem Pages Functions
+(preview da Lovable, GitHub Pages) o app volta ao manifest estático genérico.
+iOS congela o ícone na instalação: quem já instalou precisa reinstalar.
