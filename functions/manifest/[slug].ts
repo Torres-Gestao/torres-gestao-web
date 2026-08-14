@@ -45,16 +45,13 @@ export const onRequestGet = async ({ params, request, env }: Ctx) => {
     background_color: "#ffffff",
     theme_color: cor,
     lang: "pt-BR",
+    // Sem "type": a logo do lojista pode ser png/jpg/webp; o navegador detecta.
     icons: loja.logo_url
       ? [
-          { src: `${base}?size=192&v=${v}`, sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: `${base}?size=512&v=${v}`, sizes: "512x512", type: "image/png", purpose: "any" },
-          {
-            src: `${base}?size=512&maskable=1&v=${v}`,
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "maskable",
-          },
+          { src: `${base}?size=192&v=${v}`, sizes: "192x192", purpose: "any" },
+          { src: `${base}?size=512&v=${v}`, sizes: "512x512", purpose: "any" },
+          { src: `${base}?size=512&maskable=1&v=${v}`, sizes: "512x512", purpose: "maskable" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
         ]
       : [
           { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
